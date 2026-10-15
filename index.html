@@ -1,0 +1,742 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Benchmark Cartography</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a sticky header with a benchmark switcher and stat strip, then a two-pane workbench
+   (list on the left, detail on the right) that stacks on phones. Every color is a token. */
+:root{
+  --bg:#f7f8f7; --panel:#ffffff; --line:#dfe3e0; --line-strong:#b9c0bb;
+  --fg:#15201b; --fg-2:#4d5a53; --fg-3:#7d8a83;
+  --accent:#2a78d6; --accent-soft:#e3eefb; --series-2:#eb6834;
+  --bar:#2a78d6; --hl:#fff4c2; --fam-2:#8a4fd3; --b1:#1b4f99; --b2:#2a78d6; --b3:#6ea3e6; --b4:#b7d0f1; --b5:#c9d1cc; --b6:#eb6834; --b7:#ece9dd; --hm:42,120,214;
+  --st-missing:#c9d1cc; --st-under:#eda100; --st-over:#2a78d6;
+  --font-ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#131715; --panel:#1b211e; --line:#2b3430; --line-strong:#43504a;
+  --fg:#e9ede9; --fg-2:#aab4ad; --fg-3:#78857d;
+  --accent:#3987e5; --accent-soft:#1d2d44; --series-2:#d95926;
+  --bar:#3987e5; --hl:#4a3f12; --fam-2:#a47ae8; --b1:#8fbcf3; --b2:#3987e5; --b3:#245fab; --b4:#1a3d6b; --b5:#3a4440; --b6:#d95926; --b7:#2a2f2c; --hm:57,135,229;
+  --st-missing:#3a4440; --st-under:#c98500; --st-over:#3987e5; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#131715; --panel:#1b211e; --line:#2b3430; --line-strong:#43504a;
+  --fg:#e9ede9; --fg-2:#aab4ad; --fg-3:#78857d;
+  --accent:#3987e5; --accent-soft:#1d2d44; --series-2:#d95926;
+  --bar:#3987e5; --hl:#4a3f12; --fam-2:#a47ae8; --b1:#8fbcf3; --b2:#3987e5; --b3:#245fab; --b4:#1a3d6b; --b5:#3a4440; --b6:#d95926; --b7:#2a2f2c; --hm:57,135,229;
+  --st-missing:#3a4440; --st-under:#c98500; --st-over:#3987e5; color-scheme:dark }
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font-ui);display:flex;flex-direction:column}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--accent)}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+h1,h2,h3{margin:0;text-wrap:balance}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+select.ctl,input.ctl{padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;background:var(--bg)}
+
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.head-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+h1{font-size:18px;font-weight:600;letter-spacing:-.01em}
+.sub{color:var(--fg-2);font-size:12px}
+#bench{font-weight:600;padding:5px 8px}
+.stats{display:flex;flex-wrap:wrap;gap:4px 22px;margin-top:8px}
+.stat{display:flex;flex-direction:column;min-width:0}
+.stat .v{font-family:var(--font-mono);font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+.stat .k{font-size:11px;color:var(--fg-3)}
+.tabs{display:flex;gap:2px;margin-top:10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{background:none;border:0;border-bottom:2px solid transparent;padding:6px 10px;cursor:pointer;color:var(--fg-2);font-weight:500;margin-bottom:-1px;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tab:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+main{flex:1;min-height:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
+.view[hidden]{display:none!important}
+.work{display:grid;grid-template-columns:minmax(260px,380px) minmax(0,1fr);gap:14px;height:calc(100vh - 176px);min-height:420px}
+@media (max-width:760px){ .work{grid-template-columns:1fr;height:auto} .pane.list{max-height:46vh} }
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;min-width:0;min-height:0}
+.pane .bar{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.pane .bar input[type=search]{flex:1;min-width:120px}
+.count{font-size:11px;color:var(--fg-3);width:100%}
+.scroll{overflow:auto;flex:1;min-height:0}
+.row{display:grid;grid-template-columns:52px 1fr auto auto;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left}
+.sc{font-family:var(--font-mono);font-size:11px;font-variant-numeric:tabular-nums;padding:1px 5px;border-radius:3px;min-width:3.2em;text-align:center;border:1px solid var(--line-strong);color:var(--fg-2)}
+.sc.good{background:var(--st-over);color:#fff;border-color:transparent}
+.sc.mid{background:var(--st-under);color:#1a1200;border-color:transparent}
+.sc.weak{background:var(--st-missing);border-color:transparent}
+.sc.none{opacity:.45}
+.row:hover{background:var(--accent-soft)}
+.row[aria-current="true"]{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.row .id{font-family:var(--font-mono);font-size:12px;color:var(--fg-3)}
+.row .lab{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .val{font-family:var(--font-mono);font-size:12px;color:var(--fg-2);font-variant-numeric:tabular-nums}
+.row.q{grid-template-columns:44px 1fr auto}
+.row.q .lab{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.more{margin:8px;padding:6px;border:1px dashed var(--line-strong);background:none;border-radius:4px;cursor:pointer;color:var(--fg-2)}
+
+.detail{padding:14px 16px;overflow:auto}
+.detail h2{font-size:20px;font-weight:600;line-height:1.25}
+.detail .meta{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0 14px;color:var(--fg-2);font-size:13px}
+.detail .meta b{font-family:var(--font-mono);font-weight:500;color:var(--fg)}
+.sec{margin-top:18px}
+.sec h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);margin-bottom:8px;font-weight:600}
+.qtext{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px 14px;max-width:70ch;white-space:pre-wrap;line-height:1.5;font-size:13px;max-height:40vh;overflow:auto}
+.empty{color:var(--fg-3);padding:40px 16px;text-align:center}
+
+.bars{display:grid;grid-template-columns:minmax(0,1fr) 64px;gap:4px 10px;max-width:760px}
+.bars .b{display:grid;grid-template-columns:minmax(120px,42%) minmax(0,1fr);gap:8px;align-items:center;min-width:0;cursor:pointer;border:0;background:none;padding:2px 0;text-align:left}
+.bars .b:hover .lab{color:var(--accent)}
+.bars .lab{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.bars .lab small{font-family:var(--font-mono);color:var(--fg-3);margin-right:6px}
+.bars .track{height:10px;background:var(--bg);border-radius:0 3px 3px 0;position:relative}
+.bars .fill{position:absolute;left:0;top:0;bottom:0;background:var(--bar);border-radius:0 3px 3px 0;min-width:2px}
+.bars .n{font-family:var(--font-mono);font-size:12px;color:var(--fg-2);text-align:right;font-variant-numeric:tabular-nums;align-self:center}
+.toplist{display:flex;flex-direction:column;gap:6px;max-width:760px}
+.toplist button{display:grid;grid-template-columns:64px 1fr;gap:10px;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;cursor:pointer;line-height:1.4}
+.toplist button:hover{border-color:var(--accent)}
+.toplist .v{font-family:var(--font-mono);font-size:12px;color:var(--fg-2);font-variant-numeric:tabular-nums}
+.toplist .t{min-width:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+mark{background:var(--hl);color:inherit;border-radius:2px}
+
+svg text{font-family:var(--font-ui);fill:var(--fg-2);font-size:11px}
+svg .axis{stroke:var(--line-strong);stroke-width:1}
+.chart-wrap{max-width:760px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--fg-2);margin:6px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+.cmp{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px);gap:14px}
+@media (max-width:900px){ .cmp{grid-template-columns:1fr} }
+.cmp .pane{padding:14px 16px}
+canvas{width:100%;height:auto;display:block;border-radius:4px}
+.tip{position:fixed;pointer-events:none;background:var(--panel);border:1px solid var(--line-strong);border-radius:4px;padding:6px 8px;font-size:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);max-width:280px;z-index:9}
+.tip[hidden]{display:none!important}
+table.kv{border-collapse:collapse;width:100%;font-size:13px}
+table.kv td,table.kv th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}
+table.kv td.n{font-family:var(--font-mono);text-align:right;font-variant-numeric:tabular-nums}
+table.kv th{color:var(--fg-3);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.note{color:var(--fg-2);font-size:13px;max-width:62ch;line-height:1.5}
+
+/* suite view */
+.suite{display:flex;flex-direction:column;gap:14px}
+.suite .pane{padding:12px 14px}
+.suite .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.suite .tools input{flex:1;min-width:160px}
+.tblwrap{overflow-x:auto;margin-top:10px}
+table.suite{border-collapse:collapse;font-size:13px;min-width:100%}
+table.suite th,table.suite td{padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.suite th{text-align:left;color:var(--fg-3);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;user-select:none}
+table.suite th[aria-sort]{color:var(--fg)}
+table.suite th.n,table.suite td.n{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+table.suite td.lab{max-width:34ch;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+table.suite td.lab:hover{color:var(--accent)}
+.cell{display:inline-block;min-width:3.4em;padding:1px 5px;border-radius:3px}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;font-weight:600}
+.pill.missing{background:var(--st-missing);color:var(--fg-2)}
+.pill.underrepresented{background:var(--st-under);color:#1a1200}
+.pill.overrepresented{background:var(--st-over);color:#fff}
+.pill.typical{border:1px solid var(--line-strong);color:var(--fg-2)}
+.never{display:grid;grid-template-columns:120px minmax(0,1fr) 70px;gap:4px 10px;align-items:center;max-width:560px;font-size:13px}
+.never .track{height:10px;background:var(--bg);border-radius:0 3px 3px 0;position:relative}
+.never .fill{position:absolute;inset:0 auto 0 0;background:var(--bar);border-radius:0 3px 3px 0}
+.never .n{font-family:var(--font-mono);text-align:right;font-variant-numeric:tabular-nums;color:var(--fg-2)}
+/* lineage view */
+.lineage{display:flex;flex-direction:column;gap:14px}
+.lineage .pane{padding:12px 14px}
+.lin{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.lin h3{font-size:13px;font-weight:600;color:var(--fg)}
+.chain{display:flex;flex-wrap:wrap;align-items:stretch;gap:4px 0}
+.node{display:flex;flex-direction:column;gap:2px;min-width:132px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);text-align:left;cursor:default;font:inherit;color:inherit}
+.node.have{border-color:var(--accent);background:var(--accent-soft);cursor:pointer}
+.node.have:hover{border-color:var(--fg)}
+.node.excl{opacity:.55;border-style:dashed}
+.node .nm{font-weight:600;font-size:13px}
+.node .yr{font-family:var(--font-mono);font-size:11px;color:var(--fg-2)}
+.node .rel{font-size:11px;color:var(--fg-3)}
+.node .st{font-size:11px;font-weight:600;color:var(--fg-3)}
+.node.have .st{color:var(--accent)}
+.arrow{display:flex;align-items:center;padding:0 6px;color:var(--fg-3);font-size:16px}
+.lin-key{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--fg-2);margin-top:8px}
+.lin-key i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-2px;border:1px solid var(--line)}
+.effgrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;margin-top:10px}
+@media (max-width:760px){.effgrid{grid-template-columns:1fr}}
+.effgrid svg{width:100%;height:auto;display:block;font-family:var(--font-ui)}
+#effpane .ttl{font-size:13px;font-weight:600;margin-bottom:2px}
+#effpane .sub{font-size:11.5px;color:var(--fg-3);margin-bottom:6px}
+#effrare svg{width:100%;height:auto;display:block;font-family:var(--font-ui)}
+.eff-key{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--fg-2);margin-top:6px}
+.eff-key i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
+.efftbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
+.efftbl th,.efftbl td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.efftbl th:first-child,.efftbl td:first-child{text-align:left}
+.efftbl th{color:var(--fg-3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.efftbl .n{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.efftbl tr.fam td{color:var(--fg-2);font-weight:600;text-align:left;padding-top:8px;background:var(--bg)}
+.efftbl tr.fam td i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.effwrap{overflow-x:auto}
+.bands{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px;margin-top:8px}
+@media (max-width:820px){.bands{grid-template-columns:1fr}}
+.bands svg{width:100%;height:auto;display:block;font-family:var(--font-ui)}
+.bands .ttl{font-size:13px;font-weight:600;margin-bottom:2px}
+.bands .sub{font-size:11.5px;color:var(--fg-3);margin-bottom:6px}
+.band-key{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--fg-2);margin-top:6px}
+.band-key i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
+@media (prefers-reduced-motion:no-preference){ .row,.tab{transition:background .12s} }
+</style>
+
+<header>
+  <div class="head-row">
+    <h1>Benchmark Cartography</h1>
+    <select id="bench" class="ctl" aria-label="Benchmark"></select>
+    <span class="sub" id="sub"></span>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-concepts" aria-selected="true" data-view="concepts">Concepts</button>
+    <button class="tab" role="tab" id="tab-questions" aria-selected="false" data-view="questions">Items</button>
+    <button class="tab" role="tab" id="tab-compare" aria-selected="false" data-view="compare">Base vs instruct</button>
+    <button class="tab" role="tab" id="tab-suite" aria-selected="false" data-view="suite">All benchmarks</button>
+    <button class="tab" role="tab" id="tab-lineage" aria-selected="false" data-view="lineage">Lineage</button>
+  </div>
+</header>
+
+<main>
+  <div class="empty" id="loading">Loading…</div>
+
+  <section class="view work" id="view-concepts" hidden>
+    <div class="pane list">
+      <div class="bar">
+        <input type="search" id="fsearch" class="ctl" placeholder="Search concept labels or id…" aria-label="Search concepts">
+        <select id="fsort" class="ctl" aria-label="Sort concepts">
+          <option value="chi">Coverage χ (high → low)</option>
+          <option value="chi_asc">Coverage χ (low → high)</option>
+          <option value="frac">Share of items active</option>
+          <option value="max">Peak activation</option>
+          <option value="score">Label score (high → low)</option>
+          <option value="score_asc">Label score (low → high)</option>
+          <option value="id">Feature id</option>
+        </select>
+        <div class="count" id="fcount"></div>
+      </div>
+      <div class="scroll" id="flist"></div>
+    </div>
+    <div class="pane detail" id="fdetail"><div class="empty">Pick a concept on the left.</div></div>
+  </section>
+
+  <section class="view work" id="view-questions" hidden>
+    <div class="pane list">
+      <div class="bar">
+        <input type="search" id="qsearch" class="ctl" placeholder="Search item text…" aria-label="Search items">
+        <div class="count" id="qcount"></div>
+      </div>
+      <div class="scroll" id="qlist"></div>
+    </div>
+    <div class="pane detail" id="qdetail"><div class="empty">Pick an item on the left.</div></div>
+  </section>
+
+  <section class="view cmp" id="view-compare" hidden>
+    <div class="pane">
+      <h2 style="font-size:16px" id="cmp-title">Mean activation per concept, base vs instruct</h2>
+      <p class="note" id="cmp-note">Each dot is one SAE feature. Both axes are log scale of the mean per-token activation across this benchmark's items. Dots on the diagonal fire the same under both models. Hover for the label, click to open.</p>
+      <canvas id="scatter" width="900" height="620" aria-label="Scatter of concept activation under base and instruct models"></canvas>
+      <div class="legend"><span><i style="background:var(--accent)"></i>one concept</span><span><i style="background:var(--series-2);width:14px;height:2px;vertical-align:3px"></i>y = x</span></div>
+    </div>
+    <div class="pane">
+      <h3 class="eyebrow" style="margin-bottom:8px">Reconstruction quality</h3>
+      <table class="kv" id="metatable"></table>
+      <p class="note" style="margin-top:12px">The SAE was trained on the base model's residual stream. Lower unexplained variance means the features describe the benchmark's activations more faithfully.</p>
+      <div class="sec">
+        <h3>Coverage distribution on this benchmark</h3>
+        <div class="chart-wrap" id="covchart"></div>
+        <p class="note">log₁₀ of χ, a concept's total activation relative to the average concept. 0 is average coverage.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="view suite" id="view-suite" hidden>
+    <div class="pane">
+      <h2 style="font-size:16px">Which concepts the benchmarks cover, and which none of them touch</h2>
+      <p class="note">χ(b, c) is concept c's activation mass on benchmark b relative to the average concept on that benchmark. Suite χ is the mean of χ across all benchmarks listed in the switcher. A concept is <b>missing</b> below e⁻⁵ ≈ 0.0067; the bottom and top deciles of the rest are <b>under</b>- and <b>over</b>-represented. Base Gemma 2 2B throughout.</p>
+      <div class="sec" style="display:flex;gap:28px;flex-wrap:wrap">
+        <div><h3>Status counts</h3><div id="statuscounts" class="legend" style="flex-direction:column;gap:4px"></div></div>
+        <div style="flex:1;min-width:260px"><h3>Concepts never active per benchmark</h3><div class="never" id="never"></div></div>
+      </div>
+    </div>
+    <div class="pane" id="bandpane" hidden>
+      <h2 style="font-size:16px">How much of each benchmark rests on concepts with verified labels</h2>
+      <p class="note">Concepts are grouped by their label's detection score. Left: the share of each benchmark's activation mass (mean over items) carried by each band. Right: the effective number of concepts when only that band is counted, shaded within each column. Hover any cell or segment for the numbers; click a benchmark name to open it.</p>
+      <div class="bands">
+        <div><div class="ttl">Share of activation mass by label-score band</div><div class="sub">each row sums to 100%</div><div id="bandbars"></div><div class="band-key" id="bandkey"></div></div>
+        <div><div class="ttl">Effective concepts within each band</div><div class="sub">exp(entropy) over the band's concepts only; not additive across bands</div><div id="bandheat"></div></div>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="tools">
+        <input type="search" id="ssearch" class="ctl" placeholder="Search concept labels or id…" aria-label="Search suite concepts">
+        <select id="sstatus" class="ctl" aria-label="Filter by status"><option value="">All statuses</option><option value="overrepresented">Overrepresented</option><option value="typical">Typical</option><option value="underrepresented">Underrepresented</option><option value="missing">Missing</option></select>
+        <span class="count" style="width:auto" id="scount"></span>
+      </div>
+      <div class="tblwrap"><table class="suite" id="stable"></table></div>
+      <button class="more" id="smore" hidden>Show more</button>
+    </div>
+  </section>
+  <section class="view lineage" id="view-lineage" hidden>
+    <div class="pane">
+      <h2 style="font-size:16px">Benchmark lineages</h2>
+      <p class="note">Each row is a succession of benchmarks the field treats as replacing one another. <b>explicit</b> means the successor paper names its predecessor as saturated or limited; <b>conventional</b> means the ordering is common usage. Blue nodes are in this atlas and open in the Concepts tab; the rest are not run yet. The breadth question: does each successor widen the concept space, or only raise difficulty on the same concepts?</p>
+      <div class="lin-key"><span><i style="background:var(--accent-soft);border-color:var(--accent)"></i>in atlas</span><span><i style="background:var(--bg)"></i>not run yet</span><span><i style="background:var(--bg);border-style:dashed"></i>private, excluded</span></div>
+      <div id="lineages"></div>
+    </div>
+    <div class="pane" id="effpane" hidden>
+      <h2 style="font-size:16px">Effective concepts along each lineage</h2>
+      <p class="note">How many concepts does each benchmark really spread its activation over? Each item is one unit: its per-token mean activation vector, averaged over the benchmark's items. <b>Effective concepts</b> is exp(entropy) of each concept's share of that average, so 16,384 would mean perfectly even use. <b>Breadth</b> is the looser count of concepts with coverage χ ≥ e⁻⁵. The count grows with the number of items sampled, so the first chart is a rarefaction curve: effective concepts at 30 to 1,000 items and at the full size (mean of <span id="effrseeds" class="mono"></span> draws per point, base model). The bars below read every benchmark off that curve at a shared <span id="effbudget" class="mono"></span>-item budget (mean of <span id="effseeds" class="mono"></span> draws; whiskers are ± 1 sd). <span id="effexcl"></span> Hover a bar or curve for its numbers; click a bar to open that benchmark.</p>
+      <div style="margin-top:10px"><div class="ttl">Rarefaction: effective concepts vs. items sampled</div><div class="sub">log x; last point of each line is the full benchmark; whiskers ± 1 sd over draws; hover a line for its values, click to open that benchmark</div><div id="effrare"></div><div class="eff-key" id="effrarekey"></div></div>
+      <div class="effgrid">
+        <div><div class="ttl">Effective concepts vs. breadth</div><div class="sub">colored = effective, grey = breadth; benchmarks in lineage order</div><div id="effbars"></div>
+          <div class="eff-key" id="effkey"></div></div>
+        <div><div class="ttl">Why effective ≪ breadth: mass is concentrated</div><div class="sub">cumulative share of activation mass by concept rank (log x, full data)</div><div id="effcurve"></div></div>
+      </div>
+      <div class="effwrap"><table class="efftbl" id="efftbl"></table></div>
+    </div>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(async function(){
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt = (x, d=3) => Number(x).toFixed(d);
+  const NP = id => `https://www.neuronpedia.org/gemma-2-2b/20-gemmascope-res-16k/${id}`;
+  const PAGE = 150;
+  const SCORE_TIP = 'Label detection score: a local judge (Qwen3-30B-A3B) saw the label plus 5 top-activating and 5 non-activating excerpts and marked which match. 1 = perfect, 0.5 = chance.';
+  const scoreChip = s => s == null ? `<span class="sc none" title="not scored">–</span>` : `<span class="sc ${s>=0.8?'good':s>=0.65?'mid':'weak'}" title="${SCORE_TIP}">${fmt(s,2)}</span>`;
+
+  let M, D, S;                       // manifest, current benchmark data, suite data
+  let benchKey, byId, feats, items, N0, N1;
+  const nameOf = k => (M.benches.find(b=>b.key===k)||{name:k}).name;
+
+  try { M = await (await fetch('manifest.json')).json(); }
+  catch(e){ $('#loading').textContent = 'Could not load manifest.json.'; return; }
+  $('#sub').textContent = M.sae;
+  $('#bench').innerHTML = M.benches.map(b => `<option value="${b.key}">${esc(b.name)}</option>`).join('');
+
+  // ---- tabs
+  const views = ['concepts','questions','compare','suite','lineage'];
+  function show(v){
+    views.forEach(x => { $('#view-'+x).hidden = x!==v; $('#tab-'+x).setAttribute('aria-selected', x===v); });
+    try { localStorage.setItem('atlas.tab', v); } catch(e){}
+    if (v==='compare' && !cmpDrawn) drawCompare();
+    if (v==='suite' && !S) loadSuite();
+  }
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => show(b.dataset.view)));
+
+  // ---- benchmark loading
+  async function loadBench(key){
+    $('#loading').hidden = false; $('#loading').textContent = `Loading ${nameOf(key)}…`;
+    let d;
+    try { d = await (await fetch(key + '.json')).json(); }
+    catch(e){ $('#loading').textContent = `Could not load ${key}.json.`; return; }
+    D = d; benchKey = key; [N0, N1] = D.names;
+    feats = D.features; items = D.items; byId = new Map(feats.map(f => [f.id, f]));
+    $('#bench').value = key;
+    try { localStorage.setItem('atlas.bench', key); } catch(e){}
+    const m0 = D.meta[N0];
+    $('#stats').innerHTML = [
+      ['items', items.length.toLocaleString()],
+      ['tokens scored', m0.n_tokens.toLocaleString()],
+      ['active concepts', `${D.n_active.toLocaleString()} / ${D.n_feats.toLocaleString()}`],
+      ['mean L0', fmt(m0.mean_l0,1)],
+      ['variance unexplained', fmt(m0.frac_var_unexplained,3)],
+      ...(D.n_scored ? [['labels scored', `${D.n_scored.toLocaleString()} / ${D.n_active.toLocaleString()}`]] : []),
+    ].map(([k,v]) => `<div class="stat"><span class="v">${v}</span><span class="k">${k}</span></div>`).join('');
+    curF = null; curQ = null; cmpDrawn = false;
+    filterFeats(); filterItems();
+    openFeat(feats[0].id, true); openItem(0);
+    if (!$('#view-compare').hidden) drawCompare();
+    $('#loading').hidden = true;
+  }
+  $('#bench').addEventListener('change', e => loadBench(e.target.value));
+
+  // ---- concept list
+  let fFiltered = [], fShown = PAGE, curF = null;
+  function filterFeats(){
+    const q = $('#fsearch').value.trim().toLowerCase();
+    const sort = $('#fsort').value;
+    let arr = q ? feats.filter(f => f.label.toLowerCase().includes(q) || String(f.id)===q) : feats.slice();
+    const key = {chi:f=>-f.chi, chi_asc:f=>f.chi, frac:f=>-f.frac, max:f=>-f.max, id:f=>f.id,
+      score:f=>f.score==null?1:-f.score, score_asc:f=>f.score==null?1:f.score}[sort];
+    arr.sort((a,b)=>key(a)-key(b));
+    fFiltered = arr; fShown = PAGE; renderFeats();
+  }
+  function renderFeats(){
+    const sort = $('#fsort').value;
+    const valOf = f => sort==='frac' ? (f.frac*100).toFixed(0)+'%' : sort==='max' ? fmt(f.max,1) : 'χ '+fmt(f.chi,2);
+    const rows = fFiltered.slice(0,fShown).map(f =>
+      `<button class="row" data-id="${f.id}" aria-current="${curF===f.id}"><span class="id">${f.id}</span><span class="lab" title="${esc(f.label)}">${esc(f.label)||'<i>(unlabeled)</i>'}</span>${scoreChip(f.score)}<span class="val">${valOf(f)}</span></button>`).join('');
+    $('#flist').innerHTML = rows + (fShown < fFiltered.length ? `<button class="more" id="fmore">Show ${Math.min(PAGE, fFiltered.length-fShown)} more</button>` : '');
+    $('#fcount').textContent = `${fFiltered.length.toLocaleString()} concepts active on ${nameOf(benchKey)}`;
+  }
+  $('#flist').addEventListener('click', e => {
+    const r = e.target.closest('.row'); if (r) return openFeat(+r.dataset.id);
+    if (e.target.id==='fmore'){ fShown += PAGE; renderFeats(); }
+  });
+  $('#fsearch').addEventListener('input', filterFeats);
+  $('#fsort').addEventListener('change', filterFeats);
+
+  function histSVG(counts, hmax, color){
+    const W=520,H=120,pl=34,pb=22,pt=8;
+    const mx = Math.max(1,...counts), n = counts.length, bw = (W-pl-8)/n;
+    const bars = counts.map((c,i)=>{ const h=(H-pb-pt)*c/mx; return `<rect x="${(pl+i*bw+1).toFixed(1)}" y="${(H-pb-h).toFixed(1)}" width="${Math.max(1,bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}"><title>${c} items</title></rect>`; }).join('');
+    const ticks = [0,0.5,1].map(t=>{const x=pl+t*(W-pl-8); return `<line class="axis" x1="${x}" x2="${x}" y1="${H-pb}" y2="${H-pb+4}"/><text x="${x}" y="${H-4}" text-anchor="middle">${fmt(t*hmax,1)}</text>`;}).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px" role="img" aria-label="Activation histogram"><line class="axis" x1="${pl}" x2="${W-8}" y1="${H-pb}" y2="${H-pb}"/>${bars}${ticks}<text x="${pl-4}" y="${pt+8}" text-anchor="end">${mx}</text><text x="${pl-4}" y="${H-pb}" text-anchor="end">0</text></svg>`;
+  }
+
+  function openFeat(id, fromElsewhere){
+    curF = id; const f = byId.get(id);
+    if (!f){ $('#fdetail').innerHTML = `<div class="empty">Feature ${id} never fires on ${esc(nameOf(benchKey))}.</div>`; }
+    else {
+      const cmp = f.cmp !== undefined ? `<span>${N1} mean <b>${fmt(f.cmp,3)}</b></span>` : '';
+      const top = f.top.map(([i,v]) => `<button data-q="${i}"><span class="v">${fmt(v,2)}</span><span class="t">${esc(items[i].q.slice(0,400))}</span></button>`).join('');
+      $('#fdetail').innerHTML = `
+        <div class="eyebrow">Feature <span class="mono">${f.id}</span> · <a href="${NP(f.id)}" target="_blank" rel="noopener">Neuronpedia ↗</a></div>
+        <h2>${esc(f.label)||'(unlabeled)'}</h2>
+        <div class="meta">
+          <span>coverage χ <b>${fmt(f.chi,3)}</b></span>
+          <span>active on <b>${(f.frac*100).toFixed(1)}%</b> of items</span>
+          <span>${N0} mean <b>${fmt(f.mean,3)}</b></span>
+          <span>peak <b>${fmt(f.max,2)}</b></span>${cmp}
+          <span title="${SCORE_TIP}">label score ${scoreChip(f.score)}</span>
+        </div>
+        <div class="sec"><h3>Per-item activation (items where it fires)</h3>${histSVG(f.hist, f.hmax, 'var(--bar)')}</div>
+        <div class="sec"><h3>Top activating items</h3><div class="toplist">${top}</div></div>`;
+    }
+    $('#fdetail').scrollTop = 0;
+    document.querySelectorAll('#flist .row').forEach(r => r.setAttribute('aria-current', +r.dataset.id===id));
+    if (!fromElsewhere) show('concepts');
+  }
+  $('#fdetail').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b){ openItem(+b.dataset.q); show('questions'); } });
+
+  // ---- item list
+  let qFiltered = [], qShown = PAGE, curQ = null, qTerm = '';
+  function filterItems(){
+    qTerm = $('#qsearch').value.trim().toLowerCase();
+    qFiltered = qTerm ? items.map((it,i)=>[it,i]).filter(([it])=>it.q.toLowerCase().includes(qTerm)).map(([,i])=>i) : items.map((_,i)=>i);
+    qShown = PAGE; renderItems();
+  }
+  function renderItems(){
+    const rows = qFiltered.slice(0,qShown).map(i => `<button class="row q" data-i="${i}" aria-current="${curQ===i}"><span class="id">#${i}</span><span class="lab">${esc(items[i].q.slice(0,200))}</span><span class="val">${items[i].n}</span></button>`).join('');
+    $('#qlist').innerHTML = rows + (qShown < qFiltered.length ? `<button class="more" id="qmore">Show ${Math.min(PAGE, qFiltered.length-qShown)} more</button>` : '');
+    $('#qcount').textContent = `${qFiltered.length.toLocaleString()} items · right column = concepts active`;
+  }
+  $('#qlist').addEventListener('click', e => {
+    const r = e.target.closest('.row'); if (r) return openItem(+r.dataset.i);
+    if (e.target.id==='qmore'){ qShown += PAGE; renderItems(); }
+  });
+  $('#qsearch').addEventListener('input', filterItems);
+
+  function openItem(i){
+    curQ = i; const it = items[i];
+    const mx = it.top.length ? it.top[0][1] : 1;
+    const labelOf = id => (byId.get(id)||{}).label || '(unlabeled)';
+    const bars = it.top.map(([f,v]) => `<button class="b" data-f="${f}" title="${esc(labelOf(f))}"><span class="lab"><small>${f}</small>${esc(labelOf(f))}</span><span class="track"><span class="fill" style="width:${(100*v/mx).toFixed(1)}%"></span></span></button><span class="n">${fmt(v,2)}</span>`).join('');
+    let q = esc(it.q);
+    if (qTerm){ const re = new RegExp(qTerm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig'); q = q.replace(re, m=>`<mark>${m}</mark>`); }
+    $('#qdetail').innerHTML = `
+      <div class="eyebrow">${esc(nameOf(benchKey))} · item <span class="mono">#${i}</span> · ${it.n.toLocaleString()} concepts active</div>
+      <div class="qtext" style="margin-top:8px">${q}</div>
+      <div class="sec"><h3>Top ${it.top.length} concepts by mean per-token activation</h3><div class="bars">${bars}</div></div>`;
+    $('#qdetail').scrollTop = 0;
+    document.querySelectorAll('#qlist .row').forEach(r => r.setAttribute('aria-current', +r.dataset.i===i));
+  }
+  $('#qdetail').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) openFeat(+b.dataset.f); });
+
+  // ---- compare view
+  let cmpDrawn = false, scatterHandlers = null;
+  function drawCompare(){
+    cmpDrawn = true;
+    $('#cmp-title').textContent = `${nameOf(benchKey)}: mean activation per concept, ${N0} vs ${N1}`;
+    const rows = Object.entries(D.meta);
+    $('#metatable').innerHTML = `<tr><th>model</th>${rows.map(([n])=>`<th style="text-align:right">${n}</th>`).join('')}</tr>` +
+      [['tokens','n_tokens',0],['mean L0','mean_l0',1],['variance unexplained','frac_var_unexplained',3]].map(([k,key,d]) =>
+        `<tr><td>${k}</td>${rows.map(([,m])=>`<td class="n">${d?fmt(m[key],d):m[key].toLocaleString()}</td>`).join('')}</tr>`).join('');
+    const cv = D.coverage, W=360,H=110,pl=6,pb=20;
+    const mx = Math.max(...cv.counts), bw=(W-2*pl)/cv.counts.length;
+    const bars = cv.counts.map((c,i)=>{const h=(H-pb-6)*c/mx;return `<rect x="${(pl+i*bw+.5).toFixed(1)}" y="${(H-pb-h).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="var(--bar)"><title>${c} concepts</title></rect>`;}).join('');
+    const tk = [];
+    for (let t=Math.ceil(cv.edges[0]); t<=cv.edges[cv.edges.length-1]; t++){ const x=pl+(t-cv.edges[0])/(cv.edges[cv.edges.length-1]-cv.edges[0])*(W-2*pl); tk.push(`<line class="axis" x1="${x}" x2="${x}" y1="${H-pb}" y2="${H-pb+4}"/><text x="${x}" y="${H-5}" text-anchor="middle">${t}</text>`); }
+    $('#covchart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Coverage histogram"><line class="axis" x1="${pl}" x2="${W-pl}" y1="${H-pb}" y2="${H-pb}"/>${bars}${tk.join('')}</svg>`;
+
+    const c = $('#scatter');
+    if (scatterHandlers){ for (const [ev,fn] of scatterHandlers) c.removeEventListener(ev, fn); scatterHandlers = null; }
+    if (feats[0].cmp === undefined){ c.hidden = true; $('#cmp-note').textContent = 'No instruct-model run available for this benchmark.'; return; }
+    c.hidden = false;
+    const ctx = c.getContext('2d');
+    const css = getComputedStyle(document.documentElement);
+    const col = v => css.getPropertyValue(v).trim();
+    const W2=c.width,H2=c.height,P={l:56,r:16,t:12,b:44};
+    const pts = feats.filter(f=>f.mean>0 && f.cmp>0).map(f=>({f, x:Math.log10(f.mean), y:Math.log10(f.cmp)}));
+    const lo = Math.floor(Math.min(...pts.map(p=>Math.min(p.x,p.y)))), hi = Math.ceil(Math.max(...pts.map(p=>Math.max(p.x,p.y))));
+    const sx = v => P.l + (v-lo)/(hi-lo)*(W2-P.l-P.r), sy = v => H2-P.b - (v-lo)/(hi-lo)*(H2-P.t-P.b);
+    function paint(hl){
+      ctx.clearRect(0,0,W2,H2);
+      ctx.fillStyle = col('--panel'); ctx.fillRect(0,0,W2,H2);
+      ctx.strokeStyle = col('--line'); ctx.lineWidth = 1; ctx.fillStyle = col('--fg-2'); ctx.font = '12px '+col('--font-ui');
+      for (let t=lo;t<=hi;t++){ ctx.beginPath(); ctx.moveTo(sx(t),P.t); ctx.lineTo(sx(t),H2-P.b); ctx.stroke(); ctx.beginPath(); ctx.moveTo(P.l,sy(t)); ctx.lineTo(W2-P.r,sy(t)); ctx.stroke();
+        ctx.textAlign='center'; ctx.fillText('10^'+t, sx(t), H2-P.b+16); ctx.textAlign='right'; ctx.fillText('10^'+t, P.l-6, sy(t)+4); }
+      ctx.textAlign='center'; ctx.fillText(`${N0} mean activation`, (P.l+W2-P.r)/2, H2-6);
+      ctx.save(); ctx.translate(14,(P.t+H2-P.b)/2); ctx.rotate(-Math.PI/2); ctx.fillText(`${N1} mean activation`,0,0); ctx.restore();
+      ctx.strokeStyle = col('--series-2'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(sx(lo),sy(lo)); ctx.lineTo(sx(hi),sy(hi)); ctx.stroke();
+      ctx.fillStyle = col('--accent'); ctx.globalAlpha = .35;
+      for (const p of pts){ ctx.beginPath(); ctx.arc(sx(p.x),sy(p.y),2.2,0,7); ctx.fill(); }
+      ctx.globalAlpha = 1;
+      if (hl){ ctx.fillStyle = col('--series-2'); ctx.strokeStyle = col('--panel'); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx(hl.x),sy(hl.y),5,0,7); ctx.fill(); ctx.stroke(); }
+    }
+    paint();
+    const tip = $('#tip'); let cur = null;
+    const onMove = e => {
+      const r = c.getBoundingClientRect(), k = W2/r.width;
+      const mx = (e.clientX-r.left)*k, my=(e.clientY-r.top)*k;
+      let best=null, bd=12*12;
+      for (const p of pts){ const dx=sx(p.x)-mx, dy=sy(p.y)-my, d=dx*dx+dy*dy; if (d<bd){bd=d;best=p;} }
+      if (best!==cur){ cur=best; paint(best); }
+      if (best){ tip.hidden=false; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY+12)+'px';
+        tip.innerHTML = `<b class="mono">${best.f.id}</b> ${esc(best.f.label)||'(unlabeled)'}<br><span class="mono">${N0} ${fmt(best.f.mean,3)} · ${N1} ${fmt(best.f.cmp,3)}</span>`; }
+      else tip.hidden = true;
+    };
+    const onLeave = () => { tip.hidden=true; if (cur){cur=null; paint();} };
+    const onClick = () => { if (cur) openFeat(cur.f.id); };
+    scatterHandlers = [['mousemove',onMove],['mouseleave',onLeave],['click',onClick]];
+    for (const [ev,fn] of scatterHandlers) c.addEventListener(ev, fn);
+  }
+
+  // ---- suite view
+  let sRows = [], sShown = 200, sSort = {col:'chi', dir:-1};
+  async function loadSuite(){
+    try { S = await (await fetch('suite.json')).json(); }
+    catch(e){ $('#stable').innerHTML = '<tr><td class="empty">suite.json not available.</td></tr>'; return; }
+    const sc = S.status_counts, total = S.rows.length;
+    $('#statuscounts').innerHTML = ['overrepresented','typical','underrepresented','missing'].map(s =>
+      `<span><span class="pill ${s}">${s}</span> <span class="mono">${(sc[s]||0).toLocaleString()}</span> <span style="color:var(--fg-3)">(${((sc[s]||0)/total*100).toFixed(1)}%)</span></span>`).join('');
+    const nv = S.benches.map((b,i)=>[S.names[i], S.never_active[b]]).sort((a,b)=>b[1]-a[1]);
+    const nmax = Math.max(...nv.map(x=>x[1]));
+    $('#never').innerHTML = nv.map(([n,v]) => `<span>${esc(n)}</span><span class="track"><span class="fill" style="width:${(100*v/nmax).toFixed(1)}%"></span></span><span class="n">${v.toLocaleString()}</span>`).join('');
+    $('#stable').addEventListener('click', e => {
+      const th = e.target.closest('th[data-col]');
+      if (th){ const c = th.dataset.col; sSort = {col:c, dir: sSort.col===c ? -sSort.dir : (c==='label'||c==='status'||c==='id' ? 1 : -1)}; filterSuite(); return; }
+      const td = e.target.closest('td.lab'); if (td){ const id = +td.dataset.id; show('concepts'); openFeat(id, true); }
+    });
+    $('#ssearch').addEventListener('input', filterSuite);
+    $('#sstatus').addEventListener('change', filterSuite);
+    $('#smore').addEventListener('click', () => { sShown += 200; renderSuite(); });
+    filterSuite();
+  }
+  function filterSuite(){
+    const q = $('#ssearch').value.trim().toLowerCase(), st = $('#sstatus').value;
+    const bi = Object.fromEntries(S.benches.map((b,i)=>[b, 5+i]));
+    const idx = {id:0, label:1, chi:2, status:3, score:4, ...bi};
+    const k = idx[sSort.col];
+    sRows = S.rows.filter(r => (!st || r[3]===st) && (!q || r[1].toLowerCase().includes(q) || String(r[0])===q));
+    sRows.sort((a,b) => { let x=a[k], y=b[k]; if (x==null) x = sSort.dir>0 ? Infinity : -Infinity; if (y==null) y = sSort.dir>0 ? Infinity : -Infinity; return (typeof x==='string' ? x.localeCompare(y) : x-y) * sSort.dir; });
+    sShown = 200; renderSuite();
+  }
+  function renderSuite(){
+    const cols = [['id','id','n'],['label','concept',''],['status','status',''],['score','label score','n'],['chi','suite χ','n'], ...S.benches.map((b,i)=>[b,S.names[i],'n'])];
+    const head = cols.map(([c,n,cls]) => `<th class="${cls}" data-col="${c}" ${sSort.col===c?`aria-sort="${sSort.dir>0?'ascending':'descending'}"`:''}>${esc(n)}${sSort.col===c?(sSort.dir>0?' ▲':' ▼'):''}</th>`).join('');
+    const cell = v => { const a = v>=1 ? Math.min(1, 0.15+Math.log10(v+1)/2.2) : 0; const bg = a ? `background:color-mix(in srgb, var(--bar) ${(a*100).toFixed(0)}%, transparent);${a>.55?'color:#fff':''}` : v===0 ? 'color:var(--fg-3)' : ''; return `<td class="n"><span class="cell" style="${bg}">${v===0?'0':v<0.01?v.toExponential(1):fmt(v, v<1?3:v<10?2:1)}</span></td>`; };
+    const body = sRows.slice(0,sShown).map(r => `<tr><td class="n" style="color:var(--fg-3)">${r[0]}</td><td class="lab" data-id="${r[0]}" title="${esc(r[1])}">${esc(r[1])||'<i>(unlabeled)</i>'}</td><td><span class="pill ${r[3]}">${r[3]}</span></td><td class="n">${scoreChip(r[4])}</td>${cell(r[2])}${S.benches.map((_,i)=>cell(r[5+i])).join('')}</tr>`).join('');
+    $('#stable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
+    $('#scount').textContent = `${sRows.length.toLocaleString()} of ${S.rows.length.toLocaleString()} concepts`;
+    $('#smore').hidden = sShown >= sRows.length;
+    $('#smore').textContent = `Show ${Math.min(200, sRows.length - sShown)} more`;
+  }
+
+  // ---- lineage (static; keys match manifest where a benchmark has been run)
+  const LINEAGES = [
+    {fam:'Reading comprehension (extractive)', nodes:[
+      {name:'SQuAD 1.1', year:2016, key:'squad'},
+      {name:'SQuAD 2.0', year:2018, rel:'explicit', key:'squad_v2'},
+      {name:'Natural Questions', year:2019, rel:'conventional', key:'nq_open', note:'NQ-Open split here'}]},
+    {fam:'Knowledge MCQ', nodes:[
+      {name:'ARC', year:2018, key:'arc'},
+      {name:'MMLU', year:2020, rel:'conventional', key:'mmlu'},
+      {name:'GPQA', year:2023, rel:'conventional', key:'gpqa'},
+      {name:'MMLU-Pro', year:2024, rel:'explicit', key:'mmlu_pro'},
+      {name:"Humanity's Last Exam", year:2025, rel:'explicit', key:'hle', note:'text-only subset, 2,370 of 2,500'}]},
+    {fam:'Math word problems / competition math', nodes:[
+      {name:'MATH', year:2021, key:'math'},
+      {name:'GSM8K', year:2021, rel:'conventional', key:'gsm8k'},
+      {name:'AIME 2024/25', year:2024, rel:'conventional', key:'aime'},
+      {name:'FrontierMath', year:2024, rel:'explicit', excl:true}]},
+  ];
+  function renderLineages(){
+    const have = new Set(M.benches.map(b=>b.key));
+    $('#lineages').innerHTML = LINEAGES.map(L => `<div class="lin"><h3>${esc(L.fam)}</h3><div class="chain">${
+      L.nodes.map((n,i) => {
+        const inAtlas = n.key && have.has(n.key);
+        const cls = inAtlas ? 'node have' : n.excl ? 'node excl' : 'node';
+        const st = inAtlas ? 'in atlas' : n.excl ? 'private' : 'not run';
+        const tag = inAtlas ? 'button' : 'div';
+        return (i ? '<span class="arrow">→</span>' : '') +
+          `<${tag} class="${cls}" ${inAtlas?`data-key="${n.key}"`:''}><span class="nm">${esc(n.name)}</span><span class="yr">${n.year}</span><span class="rel">${n.rel||'origin'}${n.note?' · '+esc(n.note):''}</span><span class="st">${st}</span></${tag}>`;
+      }).join('')}</div></div>`).join('');
+  }
+  $('#lineages').addEventListener('click', async e => {
+    const b = e.target.closest('[data-key]'); if (!b) return;
+    await loadBench(b.dataset.key); show('concepts');
+  });
+
+
+  // ---- effective concepts along the lineages (effective.json from web/build_effective.py)
+  async function renderEffective(){
+    let E; try { E = await (await fetch('effective.json')).json(); } catch(e){ return; }
+    const pane = $('#effpane'); pane.hidden = false;
+    $('#effbudget').textContent = E.budget.toLocaleString(); $('#effseeds').textContent = E.seeds;
+    const FAMC = ['var(--accent)','var(--fam-2)','var(--series-2)'];
+    const rows = []; E.families.forEach((F,fi) => F.rows.forEach(r => rows.push({...r, fi, fam:F.fam, color:FAMC[fi]})));
+    const have = new Set(M.benches.map(b=>b.key));
+    const tip = $('#tip');
+    const showTip = (e, html) => { tip.hidden=false; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY+12)+'px'; tip.innerHTML = html; };
+    const hideTip = () => { tip.hidden = true; };
+    const short = n => n.replace(' 2024/25','').replace('-Challenge','').replace(' Diamond','');
+
+    $('#effrseeds').textContent = E.rseeds;
+    $('#effexcl').textContent = E.excluded && E.excluded.length ? `${E.excluded.map(x=>x.name).join(' and ')} have fewer items than the budget and are left out of this view.` : '';
+    // rarefaction
+    {
+      const RW=1000, RH=330, rl=50, rr=90, rt=14, rb=36, riw=RW-rl-rr, rih=RH-rt-rb;
+      const xmin=30, xmax=1700, ymax=4600;
+      const rx = t => rl + riw*(Math.log10(t)-Math.log10(xmin))/(Math.log10(xmax)-Math.log10(xmin)), ry = v => rt + rih - rih*v/ymax;
+      const xt = [30,60,125,250,500,1000,1500];
+      const rgrid = xt.map(t=>`<line x1="${rx(t)}" x2="${rx(t)}" y1="${rt}" y2="${rt+rih}" stroke="var(--line)"/><text x="${rx(t)}" y="${rt+rih+14}" text-anchor="middle" font-size="10" fill="var(--fg-3)">${t.toLocaleString()}</text>`).join('')
+        + [0,1000,2000,3000,4000].map(v=>`<line x1="${rl}" x2="${RW-rr}" y1="${ry(v)}" y2="${ry(v)}" stroke="var(--line)"/><text x="${rl-6}" y="${ry(v)+3.5}" text-anchor="end" font-size="10" fill="var(--fg-3)">${v?v/1000+'k':'0'}</text>`).join('')
+        + `<line x1="${rx(E.budget)}" x2="${rx(E.budget)}" y1="${rt}" y2="${rt+rih}" stroke="var(--line-strong)" stroke-dasharray="3 3"/><text x="${rx(E.budget)+4}" y="${rt+10}" font-size="10" fill="var(--fg-2)">shared budget ${E.budget.toLocaleString()} items</text>`;
+      const dash = r => r.fi===2 ? 'stroke-dasharray="6 3"' : r.fi===1 ? 'stroke-dasharray="1.5 3" stroke-linecap="round"' : '';
+      const lines = rows.map((r,i)=>`<g class="effrl" data-i="${i}" style="cursor:${have.has(r.key)?'pointer':'default'}"><path d="${r.rare.map((q,j)=>(j?'L':'M')+rx(q[0]).toFixed(1)+' '+ry(q[1]).toFixed(1)).join('')}" fill="none" stroke="${r.color}" stroke-width="2" ${dash(r)}/>${r.rare.filter(q=>q[2]).map(q=>`<line x1="${rx(q[0])}" x2="${rx(q[0])}" y1="${ry(q[1]-q[2])}" y2="${ry(q[1]+q[2])}" stroke="${r.color}" stroke-width="1.2"/><line x1="${rx(q[0])-3}" x2="${rx(q[0])+3}" y1="${ry(q[1]-q[2])}" y2="${ry(q[1]-q[2])}" stroke="${r.color}" stroke-width="1"/><line x1="${rx(q[0])-3}" x2="${rx(q[0])+3}" y1="${ry(q[1]+q[2])}" y2="${ry(q[1]+q[2])}" stroke="${r.color}" stroke-width="1"/>`).join('')}${r.rare.map(q=>`<circle cx="${rx(q[0])}" cy="${ry(q[1])}" r="3" fill="${r.color}" stroke="var(--panel)" stroke-width="1.2"/>`).join('')}<path d="${r.rare.map((q,j)=>(j?'L':'M')+rx(q[0]).toFixed(1)+' '+ry(q[1]).toFixed(1)).join('')}" fill="none" stroke="transparent" stroke-width="12"/></g>`).join('');
+      // end labels, nudged apart
+      const ends = rows.map((r,i)=>({i, y: ry(r.rare[r.rare.length-1][1]), x: rx(r.rare[r.rare.length-1][0])})).sort((a,b)=>a.y-b.y);
+      for (let k=1;k<ends.length;k++) if (ends[k].y - ends[k-1].y < 12) ends[k].y = ends[k-1].y + 12;
+      const elab = ends.map(e=>`<text x="${RW-rr+6}" y="${e.y+3.5}" font-size="10.5" fill="${rows[e.i].color}">${esc(short(rows[e.i].name))}</text>`).join('');
+      $('#effrare').innerHTML = `<svg viewBox="0 0 ${RW} ${RH}" role="img" aria-label="Effective concepts versus tokens sampled">${rgrid}${lines}${elab}<text x="${rl+riw/2}" y="${RH-2}" text-anchor="middle" font-size="10.5" fill="var(--fg-2)">items sampled (log)</text><text transform="translate(11,${rt+rih/2}) rotate(-90)" text-anchor="middle" font-size="10.5" fill="var(--fg-2)">effective concepts</text></svg>`;
+      $('#effrarekey').innerHTML = E.families.map((F,fi)=>`<span><i style="background:${FAMC[fi]}"></i>${esc(F.fam)}</span>`).join('');
+      const rv = $('#effrare');
+      rv.addEventListener('mousemove', e => { const g = e.target.closest('.effrl'); rv.querySelectorAll('.effrl').forEach(x=>x.style.opacity = (!g || x===g) ? '' : .2); if (!g){ hideTip(); return; } const r = rows[+g.dataset.i];
+        showTip(e, `<b>${esc(r.name)}</b> <span style="color:var(--fg-3)">${esc(r.fam)}</span><br><span class="mono">${r.rare.map(q=>`${q[0].toLocaleString()} items → ${q[1].toLocaleString()}${q[2]?' ± '+q[2]:''}`).join('<br>')}</span>`); });
+      rv.addEventListener('mouseleave', () => { hideTip(); rv.querySelectorAll('.effrl').forEach(x=>x.style.opacity=''); });
+      rv.addEventListener('click', async e => { const g = e.target.closest('.effrl'); if (!g) return; const r = rows[+g.dataset.i]; if (have.has(r.key)){ await loadBench(r.key); show('concepts'); } });
+    }
+    // bars
+    const W=640, H=340, ml=46, mr=8, mt=26, mb=58, gap=10, famGap=14;
+    const n = rows.length, nf = E.families.length;
+    const iw = W-ml-mr, bw = (iw - famGap*(nf-1) - gap*(n-nf)) / n, ih = H-mt-mb, ymax=17000;
+    const sy = v => mt + ih - ih*v/ymax;
+    let x = ml, parts = [], labels = [], seps = [];
+    rows.forEach((r,i) => {
+      if (i && rows[i-1].fi !== r.fi){ seps.push(x + famGap/2 - gap/2); x += famGap - gap; }
+      r.x0 = x; r.x1 = x + bw;
+      parts.push(`<g class="effbar" data-i="${i}" style="cursor:${have.has(r.key)?'pointer':'default'}">
+        <rect x="${x}" y="${sy(r.breadth)}" width="${bw}" height="${sy(0)-sy(r.breadth)}" rx="3" fill="var(--line)"/>
+        <rect x="${x}" y="${sy(r.eff)}" width="${bw}" height="${sy(0)-sy(r.eff)}" rx="3" fill="${r.color}"/>
+        <line x1="${x+bw/2}" x2="${x+bw/2}" y1="${sy(r.eff-r.sd)}" y2="${sy(r.eff+r.sd)}" stroke="var(--fg)" stroke-width="1"/>
+        <text x="${x+bw/2}" y="${sy(r.eff)-5}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)">${r.eff.toLocaleString()}</text>
+        <text x="${x+bw/2}" y="${sy(r.breadth)-4}" text-anchor="middle" font-size="9.5" fill="var(--fg-3)">${r.breadth.toLocaleString()}</text>
+        
+        <rect x="${x}" y="${mt}" width="${bw}" height="${ih}" fill="transparent"/>
+      </g>`);
+      labels.push(`<text transform="translate(${x+bw/2},${sy(0)+8}) rotate(32)" text-anchor="start" font-size="10.5" fill="var(--fg)">${esc(short(r.name))}</text>`);
+      x += bw + gap;
+    });
+    const grid = [0,4000,8000,12000,16000].map(v => `<line x1="${ml}" x2="${W-mr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)"/><text x="${ml-6}" y="${sy(v)+3.5}" text-anchor="end" font-size="10" fill="var(--fg-3)">${v/1000}k</text>`).join('');
+    const famLabels = E.families.map((F,fi) => { const rs = rows.filter(r=>r.fi===fi); return `<text x="${rs[0].x0}" y="${mt-10}" font-size="11" font-weight="600" fill="${FAMC[fi]}">${esc(F.fam.split(' (')[0].split(' /')[0])} →</text>`; }).join('');
+    $('#effbars').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Effective concepts and breadth per benchmark">${grid}${seps.map(v=>`<line x1="${v}" x2="${v}" y1="${mt-14}" y2="${sy(0)}" stroke="var(--line-strong)" stroke-dasharray="3 3"/>`).join('')}${famLabels}${parts.join('')}${labels.join('')}</svg>`;
+    $('#effkey').innerHTML = E.families.map((F,fi)=>`<span><i style="background:${FAMC[fi]}"></i>${esc(F.fam)}</span>`).join('') + `<span><i style="background:var(--line)"></i>breadth (χ ≥ e⁻⁵)</span>`;
+    const bars = $('#effbars');
+    bars.addEventListener('mousemove', e => { const g = e.target.closest('.effbar'); if (!g){ hideTip(); return; } const r = rows[+g.dataset.i];
+      showTip(e, `<b>${esc(r.name)}</b> <span style="color:var(--fg-3)">${esc(r.fam)}</span><br><span class="mono">effective ${r.eff.toLocaleString()} ± ${r.sd} · breadth ${r.breadth.toLocaleString()}<br>ratio ${(r.eff/r.breadth).toFixed(2)} · top ${r.half.toLocaleString()} carry half<br>${r.items.toLocaleString()} items · ${r.ntok.toLocaleString()} tokens</span>`); });
+    bars.addEventListener('mouseleave', hideTip);
+    bars.addEventListener('click', async e => { const g = e.target.closest('.effbar'); if (!g) return; const r = rows[+g.dataset.i]; if (have.has(r.key)){ await loadBench(r.key); show('concepts'); } });
+
+    // concentration curves
+    const CW=520, CH=340, cl=44, cr=10, ct=12, cb=34, ciw=CW-cl-cr, cih=CH-ct-cb;
+    const lx = k => cl + ciw*Math.log10(k)/Math.log10(16384), ly = v => ct + cih - cih*v;
+    const cgrid = [1,10,100,1000,10000].map(k=>`<line x1="${lx(k)}" x2="${lx(k)}" y1="${ct}" y2="${ct+cih}" stroke="var(--line)"/><text x="${lx(k)}" y="${ct+cih+14}" text-anchor="middle" font-size="10" fill="var(--fg-3)">${k.toLocaleString()}</text>`).join('')
+      + [0,.25,.5,.75,1].map(v=>`<line x1="${cl}" x2="${CW-cr}" y1="${ly(v)}" y2="${ly(v)}" stroke="${v===.5?'var(--line-strong)':'var(--line)'}" ${v===.5?'stroke-dasharray="3 3"':''}/><text x="${cl-6}" y="${ly(v)+3.5}" text-anchor="end" font-size="10" fill="var(--fg-3)">${v}</text>`).join('');
+    const paths = rows.map((r,i) => `<path class="effcur" data-i="${i}" d="${E.grid.map((k,j)=>(j?'L':'M')+lx(k).toFixed(1)+' '+ly(r.cum[j]).toFixed(1)).join('')}" fill="none" stroke="${r.color}" stroke-width="${r.fi===1?1.6:1.4}" opacity="${r.fi===0?.95:.8}" ${r.fi===2?'stroke-dasharray="5 2.5"':''} ${r.fi===1?'stroke-dasharray="1.5 2.5" stroke-linecap="round"':''}/>`).join('');
+    const halfMarks = rows.map((r,i)=>`<circle class="effcur" data-i="${i}" cx="${lx(r.half)}" cy="${ly(.5)}" r="3.5" fill="${r.color}" stroke="var(--panel)" stroke-width="1.5"/>`).join('');
+    $('#effcurve').innerHTML = `<svg viewBox="0 0 ${CW} ${CH}" role="img" aria-label="Cumulative activation share by concept rank">${cgrid}${paths}${halfMarks}<text x="${cl+ciw/2}" y="${CH-4}" text-anchor="middle" font-size="10.5" fill="var(--fg-2)">concepts ranked by activation mass (log)</text><text transform="translate(10,${ct+cih/2}) rotate(-90)" text-anchor="middle" font-size="10.5" fill="var(--fg-2)">cumulative share of mass</text></svg>`;
+    const cv = $('#effcurve');
+    cv.addEventListener('mousemove', e => { const t = e.target.closest('.effcur'); if (!t){ hideTip(); cv.querySelectorAll('path').forEach(p=>p.style.opacity=''); return; } const r = rows[+t.dataset.i];
+      cv.querySelectorAll('path').forEach(p=>p.style.opacity = p.dataset.i===t.dataset.i ? 1 : .18);
+      showTip(e, `<b>${esc(r.name)}</b><br><span class="mono">top ${r.half.toLocaleString()} concepts carry half the mass<br>effective ${r.eff.toLocaleString()}</span>`); });
+    cv.addEventListener('mouseleave', () => { hideTip(); cv.querySelectorAll('path').forEach(p=>p.style.opacity=''); });
+
+    // table
+    $('#efftbl').innerHTML = `<thead><tr><th>benchmark</th><th>items</th><th>tokens</th><th title="at the shared item budget">effective @ budget</th><th>± sd</th><th>full data</th><th>breadth</th><th>eff / breadth</th><th>top-k for half</th></tr></thead><tbody>` +
+      E.families.map((F,fi)=>`<tr class="fam"><td colspan="9"><i style="background:${FAMC[fi]}"></i>${esc(F.fam)}</td></tr>` + F.rows.map(r=>`<tr><td>${esc(r.name)}</td><td class="n">${r.items.toLocaleString()}</td><td class="n">${r.ntok.toLocaleString()}</td><td class="n"><b>${r.eff.toLocaleString()}</b></td><td class="n">${r.sd}</td><td class="n">${r.full.toLocaleString()}</td><td class="n">${r.breadth.toLocaleString()}</td><td class="n">${(r.eff/r.breadth).toFixed(2)}</td><td class="n">${r.half.toLocaleString()}</td></tr>`).join('')).join('') +
+      `</tbody>` + (E.excluded && E.excluded.length ? `<tfoot><tr><td colspan="9" style="text-align:left;color:var(--fg-3);border:0">Not shown, fewer than ${E.budget.toLocaleString()} items: ${E.excluded.map(x=>`${esc(x.name)} (${x.items} items, ${x.full.toLocaleString()} effective on all of them)`).join('; ')}.</td></tr></tfoot>` : '');
+  }
+
+
+  // ---- label-score bands per benchmark (bands.json from web/build_bands.py)
+  async function renderBands(){
+    let D; try { D = await (await fetch('bands.json')).json(); } catch(e){ return; }
+    $('#bandpane').hidden = false;
+    const tip = $('#tip');
+    const showTip = (e, html) => { tip.hidden=false; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY+12)+'px'; tip.innerHTML = html; };
+    const hideTip = () => { tip.hidden = true; };
+    const COLS = ['var(--b1)','var(--b2)','var(--b3)','var(--b4)','var(--b5)','var(--b6)','var(--b7)'];
+    const have = new Set(M.benches.map(b=>b.key));
+    const rows = D.rows, nb = D.bands.length, rh = 17, gap = 3, suiteGap = 10;
+    const suites = [...new Set(rows.map(r=>r.suite))];
+    const SN = {general:'general', code:'code', lineage:'lineage'};
+    let y = 22; const ys = [];
+    rows.forEach((r,i) => { if (i && rows[i-1].suite !== r.suite) y += suiteGap; ys.push(y); y += rh + gap; });
+    const H = y + 6;
+    const name = (r, x) => `<text class="bn" data-key="${r.key}" x="${x}" y="${ys[rows.indexOf(r)] + rh/2 + 4}" text-anchor="end" font-size="11" fill="var(--fg)" style="cursor:${have.has(r.key)?'pointer':'default'}">${esc(r.name)}</text>`;
+    const suiteLabels = (x0, x1) => suites.map(sx => { const rs = rows.filter(r=>r.suite===sx); const i0 = rows.indexOf(rs[0]); return `<text x="${x0}" y="${ys[i0]-5}" font-size="10" font-weight="600" letter-spacing=".06em" fill="var(--fg-3)">${SN[sx].toUpperCase()}</text>`; }).join('');
+
+    // stacked bars
+    const W = 640, ml = 128, mr = 8, iw = W - ml - mr;
+    let segs = '';
+    rows.forEach((r,i) => { let x = ml; r.share.forEach((v,k) => { const w = iw*v; if (w > 0) segs += `<rect class="bs" data-i="${i}" data-k="${k}" x="${x.toFixed(1)}" y="${ys[i]}" width="${Math.max(0,w-1).toFixed(1)}" height="${rh}" rx="1.5" fill="${COLS[k]}"/>`; x += w; });
+      // label the two big segments
+      const w0 = iw*r.share[0]; if (w0 > 34) segs += `<text x="${ml+4}" y="${ys[i]+rh/2+3.5}" font-size="10" fill="#fff" pointer-events="none">${(100*r.share[0]).toFixed(0)}%</text>`;
+      const x4 = ml + iw*r.share.slice(0,4).reduce((a,b)=>a+b,0), w4 = iw*r.share[4]; if (w4 > 34) segs += `<text x="${x4+4}" y="${ys[i]+rh/2+3.5}" font-size="10" fill="var(--fg)" pointer-events="none">${(100*r.share[4]).toFixed(0)}%</text>`;
+    });
+    const ticks = [0,.25,.5,.75,1].map(v=>`<line x1="${ml+iw*v}" x2="${ml+iw*v}" y1="18" y2="${H-6}" stroke="var(--line)" stroke-dasharray="2 3"/><text x="${ml+iw*v}" y="12" text-anchor="middle" font-size="10" fill="var(--fg-3)">${v*100}%</text>`).join('');
+    $('#bandbars').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of activation mass by label-score band">${ticks}${suiteLabels(ml)}${rows.map(r=>name(r, ml-6)).join('')}${segs}</svg>`;
+    $('#bandkey').innerHTML = D.bands.map((b,k)=>`<span><i style="background:${COLS[k]}"></i>${esc(b)} <span style="color:var(--fg-3)">(${D.n[k].toLocaleString()})</span></span>`).join('');
+    const bb = $('#bandbars');
+    bb.addEventListener('mousemove', e => { const t = e.target.closest('.bs'); if (!t){ hideTip(); return; } const r = rows[+t.dataset.i], k = +t.dataset.k;
+      showTip(e, `<b>${esc(r.name)}</b> · score ${esc(D.bands[k])}<br><span class="mono">${(100*r.share[k]).toFixed(1)}% of activation mass<br>${r.active[k].toLocaleString()} of ${D.n[k].toLocaleString()} concepts active · effective ${r.beff[k].toLocaleString()}</span>`); });
+    bb.addEventListener('mouseleave', hideTip);
+
+    // heatmap
+    const HW = 560, hl = 128, cw = (HW - hl - 8) / nb;
+    const colMax = D.bands.map((_,k)=>Math.max(...rows.map(r=>r.beff[k])));
+    let cells = '';
+    rows.forEach((r,i) => r.beff.forEach((v,k) => { const a = colMax[k] ? v/colMax[k] : 0; const dark = a > .62;
+      cells += `<rect class="hc" data-i="${i}" data-k="${k}" x="${hl+cw*k}" y="${ys[i]}" width="${cw-2}" height="${rh}" rx="1.5" fill="rgba(var(--hm),${(0.06+0.9*a).toFixed(2)})"/><text x="${hl+cw*k+(cw-2)/2}" y="${ys[i]+rh/2+3.5}" text-anchor="middle" font-size="10" fill="${dark?'#fff':'var(--fg)'}" pointer-events="none">${v.toLocaleString()}</text>`; }));
+    const heads = D.bands.map((b,k)=>`<text x="${hl+cw*k+(cw-2)/2}" y="12" text-anchor="middle" font-size="10" fill="var(--fg-2)">${esc(b)}</text>`).join('');
+    $('#bandheat').innerHTML = `<svg viewBox="0 0 ${HW} ${H}" role="img" aria-label="Effective concepts within each label-score band">${heads}${suiteLabels(hl)}${rows.map(r=>name(r, hl-6)).join('')}${cells}</svg>`;
+    const bh = $('#bandheat');
+    bh.addEventListener('mousemove', e => { const t = e.target.closest('.hc'); if (!t){ hideTip(); return; } const r = rows[+t.dataset.i], k = +t.dataset.k;
+      showTip(e, `<b>${esc(r.name)}</b> · score ${esc(D.bands[k])}<br><span class="mono">effective ${r.beff[k].toLocaleString()} of ${r.active[k].toLocaleString()} active (${D.n[k].toLocaleString()} in band)<br>all bands: ${r.eff.toLocaleString()} · mass share ${(100*r.share[k]).toFixed(1)}%</span>`); });
+    bh.addEventListener('mouseleave', hideTip);
+    $('#bandpane').addEventListener('click', async e => { const t = e.target.closest('.bn'); if (!t || !have.has(t.dataset.key)) return; await loadBench(t.dataset.key); show('concepts'); });
+  }
+
+  // ---- boot
+  let start = M.benches[0].key, tab = 'concepts';
+  try { const b = localStorage.getItem('atlas.bench'); if (M.benches.some(x=>x.key===b)) start = b; tab = localStorage.getItem('atlas.tab') || tab; } catch(e){}
+  if (location.hash){ const h = location.hash.slice(1); if (views.includes(h)) tab = h; else if (M.benches.some(x=>x.key===h)) start = h; }
+  renderLineages();
+  renderEffective();
+  renderBands();
+  await loadBench(start);
+  show(tab);
+})();
+</script>
+
+</body></html>
