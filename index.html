@@ -40,6 +40,9 @@ select.ctl,input.ctl{padding:6px 8px;border:1px solid var(--line-strong);border-
 header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
   padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .head-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.fctl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--fg-2)}
+.fctl .fn{font-family:var(--font-mono);font-size:11px;color:var(--fg-3)}
+.fnote{font-size:12px;color:var(--fg-3);margin-top:4px}
 h1{font-size:18px;font-weight:600;letter-spacing:-.01em}
 .sub{color:var(--fg-2);font-size:12px}
 #bench{font-weight:600;padding:5px 8px}
@@ -189,9 +192,11 @@ table.suite td.lab:hover{color:var(--accent)}
   <div class="head-row">
     <h1>Benchmark Cartography</h1>
     <select id="bench" class="ctl" aria-label="Benchmark"></select>
+    <label class="fctl">Features <select id="ffilter" class="ctl" aria-label="Feature filter"><option value="all">All</option><option value="fineweb">FineWeb-filtered</option><option value="score">Autointerp ≥ 0.65</option><option value="both">Both</option></select> <span class="fn" id="fkept"></span></label>
     <span class="sub" id="sub"></span>
   </div>
   <div class="stats" id="stats"></div>
+  <div class="fnote" id="fnote"></div>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tab-concepts" aria-selected="true" data-view="concepts">Concepts</button>
     <button class="tab" role="tab" id="tab-questions" aria-selected="false" data-view="questions">Items</button>
@@ -265,7 +270,7 @@ table.suite td.lab:hover{color:var(--accent)}
     </div>
     <div class="pane" id="bandpane" hidden>
       <h2 style="font-size:16px">How much of each benchmark rests on concepts with verified labels</h2>
-      <p class="note">Concepts are grouped by their label's detection score. Left: the share of each benchmark's activation mass (summed over all tokens) carried by each band. Right: the effective number of concepts when only that band is counted, shaded within each column. Hover any cell or segment for the numbers; click a benchmark name to open it.</p>
+      <p class="note">Concepts are grouped by their label's detection score, within the features kept by the header's filter (so under the autointerp filter only the top bands remain). Left: the share of each benchmark's activation mass (summed over all tokens) carried by each band. Right: the effective number of concepts when only that band is counted, shaded within each column. Hover any cell or segment for the numbers; click a benchmark name to open it.</p>
       <div class="bands">
         <div><div class="ttl">Share of activation mass by label-score band</div><div class="sub">each row sums to 100%</div><div id="bandbars"></div><div class="band-key" id="bandkey"></div></div>
         <div><div class="ttl">Effective concepts within each band</div><div class="sub">exp(entropy) over the band's concepts only, token-weighted mass, all items; not additive across bands</div><div id="bandheat"></div></div>
@@ -290,7 +295,7 @@ table.suite td.lab:hover{color:var(--accent)}
     </div>
     <div class="pane" id="effpane" hidden>
       <h2 style="font-size:16px">Effective concepts along each lineage</h2>
-      <p class="note">How many concepts does each benchmark really spread its activation over, once the amount of text is held fixed? A draw takes random items until their token counts reach the budget T; p<sub>c</sub> is concept c's share of the activation summed over those tokens; <b>Effective(T)</b> is exp(entropy of p) averaged over S draws, so 16,384 would mean perfectly even use. <b>Breadth</b> is the looser count of concepts with coverage χ ≥ e⁻⁵. The last group is not a lineage: web text, Wikipedia and real user prompts are reference distributions, and the word-shuffled MMLU is a null that keeps the vocabulary but destroys item structure. The count grows with T, so the first chart is a rarefaction curve: Effective(T) from 1,000 tokens up to each benchmark's full size (mean of <span id="effrseeds" class="mono"></span> draws per point, base model). The bars below read every benchmark off that curve at a shared T = <span id="effbudget" class="mono"></span> tokens (S = <span id="effseeds" class="mono"></span> draws; whiskers are ± 1 sd). <span id="effexcl"></span> Hover a bar or curve for its numbers; click a bar to open that benchmark.</p>
+      <p class="note">How many concepts does each benchmark really spread its activation over, once the amount of text is held fixed? A draw takes random items until their token counts reach the budget T; p<sub>c</sub> is concept c's share of the activation summed over those tokens; <b>Effective(T)</b> is exp(entropy of p) averaged over S draws, so 16,384 would mean perfectly even use. <b>Breadth</b> is the looser count of concepts with coverage χ ≥ e⁻⁵. Both are computed over the features kept by the header's feature filter. The last group is not a lineage: web text, Wikipedia and real user prompts are reference distributions, and the word-shuffled MMLU is a null that keeps the vocabulary but destroys item structure. The count grows with T, so the first chart is a rarefaction curve: Effective(T) from 1,000 tokens up to each benchmark's full size (mean of <span id="effrseeds" class="mono"></span> draws per point, base model). The bars below read every benchmark off that curve at a shared T = <span id="effbudget" class="mono"></span> tokens (S = <span id="effseeds" class="mono"></span> draws; whiskers are ± 1 sd). <span id="effexcl"></span> Hover a bar or curve for its numbers; click a bar to open that benchmark.</p>
       <div style="margin-top:10px"><div class="ttl">Rarefaction: Effective(T) vs. tokens sampled</div><div class="sub">log x; last point of each line is the full benchmark; whiskers ± 1 sd over draws; hover a line for its values, click to open that benchmark</div><div id="effrare"></div><div class="eff-key" id="effrarekey"></div></div>
       <div class="effgrid">
         <div><div class="ttl">Effective concepts vs. breadth</div><div class="sub">colored = effective, grey = breadth; benchmarks in lineage order</div><div id="effbars"></div>
@@ -314,13 +319,55 @@ table.suite td.lab:hover{color:var(--accent)}
   const scoreChip = s => s == null ? `<span class="sc none" title="not scored">–</span>` : `<span class="sc ${s>=0.8?'good':s>=0.65?'mid':'weak'}" title="${SCORE_TIP}">${fmt(s,2)}</span>`;
 
   let M, D, S;                       // manifest, current benchmark data, suite data
-  let benchKey, byId, feats, items, N0, N1;
+  let benchKey, byId, feats, allFeats, items, N0, N1;
+  // ---- global feature filter (filters.json from web/build_filters.py)
+  let FL = null, FNAME = 'fineweb', keep = new Uint8Array(16384).fill(1), nKept = 16384;
+  const FDESC = {
+    all: 'all 16,384 features',
+    fineweb: f => `features active on fewer than ${(f.fw_threshold*100).toFixed(0)}% of FineWeb documents (drops the generic ones that fire on most text)`,
+    score: f => `features whose label detection score is at least ${f.score_threshold} (unscored dropped)`,
+    both: f => `both: not generic on FineWeb and label score at least ${f.score_threshold}`};
+  function buildKeep(name){
+    const k = new Uint8Array(16384).fill(1); if (!FL) return k;
+    for (let i = 0; i < 16384; i++){ const fw = FL.fw_frac[i] < FL.fw_threshold, sc = FL.score[i] != null && FL.score[i] >= FL.score_threshold;
+      k[i] = name === 'all' ? 1 : name === 'fineweb' ? +fw : name === 'score' ? +sc : +(fw && sc); }
+    return k;
+  }
+  function setFilter(name, first){
+    FNAME = FL ? name : 'all'; keep = buildKeep(FNAME); nKept = keep.reduce((a,b)=>a+b, 0);
+    $('#ffilter').value = FNAME; $('#fkept').textContent = `${nKept.toLocaleString()} kept`;
+    const d = FDESC[FNAME]; $('#fnote').textContent = 'Feature filter: ' + (typeof d === 'function' ? d(FL) : d) + '. Coverage χ, status and effective concepts are recomputed over the kept features.';
+    try { localStorage.setItem('atlas.filter', FNAME); } catch(e){}
+    if (first) return;
+    if (D){ applyFeatFilter(); renderStats(); filterFeats(); openFeat(byId.has(curF) ? curF : feats[0].id, true); if (curQ != null) openItem(curQ); cmpDrawn = false; if (!$('#view-compare').hidden) drawCompare(); }
+    if (S){ suiteApplyFilter(); renderSuiteSummary(); filterSuite(); }
+    renderEffective(); renderBands();
+  }
+  function applyFeatFilter(){
+    feats = allFeats.filter(f => keep[f.id]);
+    const sum = feats.reduce((a,f)=>a+f.chi0, 0), scale = sum > 0 ? nKept/sum : 1;   // χ relative to the mean kept concept
+    for (const f of feats) f.chi = f.chi0 * scale;
+  }
+  function renderStats(){
+    const m0 = D.meta[N0];
+    $('#stats').innerHTML = [
+      ['items', items.length.toLocaleString()],
+      ['tokens scored', m0.n_tokens.toLocaleString()],
+      ['active concepts', `${feats.length.toLocaleString()} / ${nKept.toLocaleString()}`],
+      ['mean L0', fmt(m0.mean_l0,1)],
+      ['variance unexplained', fmt(m0.frac_var_unexplained,3)],
+      ...(D.n_scored ? [['labels scored', `${D.n_scored.toLocaleString()} / ${D.n_active.toLocaleString()}`]] : []),
+    ].map(([k,v]) => `<div class="stat"><span class="v">${v}</span><span class="k">${k}</span></div>`).join('');
+  }
   const nameOf = k => (M.benches.find(b=>b.key===k)||{name:k}).name;
 
   try { M = await (await fetch('manifest.json')).json(); }
   catch(e){ $('#loading').textContent = 'Could not load manifest.json.'; return; }
   $('#sub').textContent = M.sae;
   $('#bench').innerHTML = M.benches.map(b => `<option value="${b.key}">${esc(b.name)}</option>`).join('');
+  try { FL = await (await fetch('filters.json')).json(); } catch(e){ FL = null; $('#ffilter').disabled = true; }
+  { let f0 = 'fineweb'; try { const v = localStorage.getItem('atlas.filter'); if (['all','fineweb','score','both'].includes(v)) f0 = v; } catch(e){} setFilter(f0, true); }
+  $('#ffilter').addEventListener('change', e => setFilter(e.target.value));
 
   // ---- tabs
   const views = ['concepts','questions','compare','suite','lineage'];
@@ -339,18 +386,12 @@ table.suite td.lab:hover{color:var(--accent)}
     try { d = await (await fetch(key + '.json')).json(); }
     catch(e){ $('#loading').textContent = `Could not load ${key}.json.`; return; }
     D = d; benchKey = key; [N0, N1] = D.names;
-    feats = D.features; items = D.items; byId = new Map(feats.map(f => [f.id, f]));
+    allFeats = D.features; items = D.items; byId = new Map(allFeats.map(f => [f.id, f]));
+    for (const f of allFeats) f.chi0 = f.chi;
+    applyFeatFilter();
     $('#bench').value = key;
     try { localStorage.setItem('atlas.bench', key); } catch(e){}
-    const m0 = D.meta[N0];
-    $('#stats').innerHTML = [
-      ['items', items.length.toLocaleString()],
-      ['tokens scored', m0.n_tokens.toLocaleString()],
-      ['active concepts', `${D.n_active.toLocaleString()} / ${D.n_feats.toLocaleString()}`],
-      ['mean L0', fmt(m0.mean_l0,1)],
-      ['variance unexplained', fmt(m0.frac_var_unexplained,3)],
-      ...(D.n_scored ? [['labels scored', `${D.n_scored.toLocaleString()} / ${D.n_active.toLocaleString()}`]] : []),
-    ].map(([k,v]) => `<div class="stat"><span class="v">${v}</span><span class="k">${k}</span></div>`).join('');
+    renderStats();
     curF = null; curQ = null; cmpDrawn = false;
     filterFeats(); filterItems();
     openFeat(feats[0].id, true); openItem(0);
@@ -376,7 +417,7 @@ table.suite td.lab:hover{color:var(--accent)}
     const rows = fFiltered.slice(0,fShown).map(f =>
       `<button class="row" data-id="${f.id}" aria-current="${curF===f.id}"><span class="id">${f.id}</span><span class="lab" title="${esc(f.label)}">${esc(f.label)||'<i>(unlabeled)</i>'}</span>${scoreChip(f.score)}<span class="val">${valOf(f)}</span></button>`).join('');
     $('#flist').innerHTML = rows + (fShown < fFiltered.length ? `<button class="more" id="fmore">Show ${Math.min(PAGE, fFiltered.length-fShown)} more</button>` : '');
-    $('#fcount').textContent = `${fFiltered.length.toLocaleString()} concepts active on ${nameOf(benchKey)}`;
+    $('#fcount').textContent = `${fFiltered.length.toLocaleString()} kept concepts active on ${nameOf(benchKey)}`;
   }
   $('#flist').addEventListener('click', e => {
     const r = e.target.closest('.row'); if (r) return openFeat(+r.dataset.id);
@@ -398,12 +439,13 @@ table.suite td.lab:hover{color:var(--accent)}
     if (!f){ $('#fdetail').innerHTML = `<div class="empty">Feature ${id} never fires on ${esc(nameOf(benchKey))}.</div>`; }
     else {
       const cmp = f.cmp !== undefined ? `<span>${N1} mean <b>${fmt(f.cmp,3)}</b></span>` : '';
+      const excl = keep[f.id] ? '' : `<div class="empty" style="margin-bottom:8px">Excluded by the current feature filter${FL ? ` (FineWeb doc-frequency ${(100*FL.fw_frac[f.id]).toFixed(0)}%, label score ${FL.score[f.id]==null?'none':FL.score[f.id]})` : ''}; χ shown is unfiltered.</div>`;
       const top = f.top.map(([i,v]) => `<button data-q="${i}"><span class="v">${fmt(v,2)}</span><span class="t">${esc(items[i].q.slice(0,400))}</span></button>`).join('');
-      $('#fdetail').innerHTML = `
+      $('#fdetail').innerHTML = excl + `
         <div class="eyebrow">Feature <span class="mono">${f.id}</span> · <a href="${NP(f.id)}" target="_blank" rel="noopener">Neuronpedia ↗</a></div>
         <h2>${esc(f.label)||'(unlabeled)'}</h2>
         <div class="meta">
-          <span>coverage χ <b>${fmt(f.chi,3)}</b></span>
+          <span>coverage χ <b>${fmt(keep[f.id] ? f.chi : f.chi0,3)}</b></span>
           <span>active on <b>${(f.frac*100).toFixed(1)}%</b> of items</span>
           <span>${N0} mean <b>${fmt(f.mean,3)}</b></span>
           <span>peak <b>${fmt(f.max,2)}</b></span>${cmp}
@@ -438,15 +480,16 @@ table.suite td.lab:hover{color:var(--accent)}
 
   function openItem(i){
     curQ = i; const it = items[i];
-    const mx = it.top.length ? it.top[0][1] : 1;
+    const top = it.top.filter(([f]) => keep[f]);
+    const mx = top.length ? top[0][1] : 1;
     const labelOf = id => (byId.get(id)||{}).label || '(unlabeled)';
-    const bars = it.top.map(([f,v]) => `<button class="b" data-f="${f}" title="${esc(labelOf(f))}"><span class="lab"><small>${f}</small>${esc(labelOf(f))}</span><span class="track"><span class="fill" style="width:${(100*v/mx).toFixed(1)}%"></span></span></button><span class="n">${fmt(v,2)}</span>`).join('');
+    const bars = top.map(([f,v]) => `<button class="b" data-f="${f}" title="${esc(labelOf(f))}"><span class="lab"><small>${f}</small>${esc(labelOf(f))}</span><span class="track"><span class="fill" style="width:${(100*v/mx).toFixed(1)}%"></span></span></button><span class="n">${fmt(v,2)}</span>`).join('');
     let q = esc(it.q);
     if (qTerm){ const re = new RegExp(qTerm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig'); q = q.replace(re, m=>`<mark>${m}</mark>`); }
     $('#qdetail').innerHTML = `
-      <div class="eyebrow">${esc(nameOf(benchKey))} · item <span class="mono">#${i}</span> · ${it.n.toLocaleString()} concepts active</div>
+      <div class="eyebrow">${esc(nameOf(benchKey))} · item <span class="mono">#${i}</span> · ${it.n.toLocaleString()} concepts active (unfiltered count)</div>
       <div class="qtext" style="margin-top:8px">${q}</div>
-      <div class="sec"><h3>Top ${it.top.length} concepts by mean per-token activation</h3><div class="bars">${bars}</div></div>`;
+      <div class="sec"><h3>Top ${top.length} kept concepts by mean per-token activation${top.length < it.top.length ? ` (${it.top.length - top.length} of the item's top ${it.top.length} excluded by the filter)` : ''}</h3><div class="bars">${bars}</div></div>`;
     $('#qdetail').scrollTop = 0;
     document.querySelectorAll('#qlist .row').forEach(r => r.setAttribute('aria-current', +r.dataset.i===i));
   }
@@ -461,7 +504,11 @@ table.suite td.lab:hover{color:var(--accent)}
     $('#metatable').innerHTML = `<tr><th>model</th>${rows.map(([n])=>`<th style="text-align:right">${n}</th>`).join('')}</tr>` +
       [['tokens','n_tokens',0],['mean L0','mean_l0',1],['variance unexplained','frac_var_unexplained',3]].map(([k,key,d]) =>
         `<tr><td>${k}</td>${rows.map(([,m])=>`<td class="n">${d?fmt(m[key],d):m[key].toLocaleString()}</td>`).join('')}</tr>`).join('');
-    const cv = D.coverage, W=360,H=110,pl=6,pb=20;
+    const lcs = feats.filter(f=>f.chi>0).map(f=>Math.log10(f.chi));
+    const e0 = Math.floor(Math.min(...lcs)), e1 = Math.ceil(Math.max(...lcs)), nb = 30;
+    const cv = {counts: new Array(nb).fill(0), edges: Array.from({length: nb+1}, (_,i)=> e0 + (e1-e0)*i/nb)};
+    for (const v of lcs) cv.counts[Math.min(nb-1, Math.floor((v-e0)/(e1-e0)*nb))]++;
+    const W=360,H=110,pl=6,pb=20;
     const mx = Math.max(...cv.counts), bw=(W-2*pl)/cv.counts.length;
     const bars = cv.counts.map((c,i)=>{const h=(H-pb-6)*c/mx;return `<rect x="${(pl+i*bw+.5).toFixed(1)}" y="${(H-pb-h).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="var(--bar)"><title>${c} concepts</title></rect>`;}).join('');
     const tk = [];
@@ -516,12 +563,8 @@ table.suite td.lab:hover{color:var(--accent)}
   async function loadSuite(){
     try { S = await (await fetch('suite.json')).json(); }
     catch(e){ $('#stable').innerHTML = '<tr><td class="empty">suite.json not available.</td></tr>'; return; }
-    const sc = S.status_counts, total = S.rows.length;
-    $('#statuscounts').innerHTML = ['overrepresented','typical','underrepresented','missing'].map(s =>
-      `<span><span class="pill ${s}">${s}</span> <span class="mono">${(sc[s]||0).toLocaleString()}</span> <span style="color:var(--fg-3)">(${((sc[s]||0)/total*100).toFixed(1)}%)</span></span>`).join('');
-    const nv = S.benches.map((b,i)=>[S.names[i], S.never_active[b]]).sort((a,b)=>b[1]-a[1]);
-    const nmax = Math.max(...nv.map(x=>x[1]));
-    $('#never').innerHTML = nv.map(([n,v]) => `<span>${esc(n)}</span><span class="track"><span class="fill" style="width:${(100*v/nmax).toFixed(1)}%"></span></span><span class="n">${v.toLocaleString()}</span>`).join('');
+    S.rows0 = S.rows;
+    suiteApplyFilter(); renderSuiteSummary();
     $('#stable').addEventListener('click', e => {
       const th = e.target.closest('th[data-col]');
       if (th){ const c = th.dataset.col; sSort = {col:c, dir: sSort.col===c ? -sSort.dir : (c==='label'||c==='status'||c==='id' ? 1 : -1)}; filterSuite(); return; }
@@ -531,6 +574,27 @@ table.suite td.lab:hover{color:var(--accent)}
     $('#sstatus').addEventListener('change', filterSuite);
     $('#smore').addEventListener('click', () => { sShown += 200; renderSuite(); });
     filterSuite();
+  }
+  function suiteApplyFilter(){
+    // keep only filtered concepts; χ per benchmark relative to the mean kept concept; suite χ and status recomputed
+    const rows = S.rows0.filter(r => keep[r[0]]);
+    const isBench = S.suites.map(x => x !== 'reference');
+    const scale = S.benches.map((_,i) => { let sum = 0; for (const r of rows) sum += r[5+i]; return sum > 0 ? nKept/sum : 0; });
+    S.rows = rows.map(r => { const c = S.benches.map((_,i) => r[5+i]*scale[i]); let sm = 0, n = 0; c.forEach((v,i) => { if (isBench[i]){ sm += v; n++; } }); return [r[0], r[1], sm/n, 'typical', r[4], ...c]; });
+    const EPS = Math.exp(-5), present = S.rows.filter(r => r[2] >= EPS).map(r => r[2]).sort((a,b)=>a-b);
+    const q = p => present.length ? present[Math.round(p*(present.length-1))] : 0;
+    const lo = q(0.1), hi = q(0.9);
+    for (const r of S.rows) r[3] = r[2] < EPS ? 'missing' : r[2] <= lo ? 'underrepresented' : r[2] >= hi ? 'overrepresented' : 'typical';
+    S.status_counts = {}; for (const r of S.rows) S.status_counts[r[3]] = (S.status_counts[r[3]]||0) + 1;
+    S.never_active = Object.fromEntries(S.benches.map((b,i) => [b, S.rows.filter(r => r[5+i] === 0).length]));
+  }
+  function renderSuiteSummary(){
+    const sc = S.status_counts, total = S.rows.length;
+    $('#statuscounts').innerHTML = ['overrepresented','typical','underrepresented','missing'].map(s =>
+      `<span><span class="pill ${s}">${s}</span> <span class="mono">${(sc[s]||0).toLocaleString()}</span> <span style="color:var(--fg-3)">(${((sc[s]||0)/total*100).toFixed(1)}%)</span></span>`).join('');
+    const nv = S.benches.map((b,i)=>[S.names[i], S.never_active[b]]).sort((a,b)=>b[1]-a[1]);
+    const nmax = Math.max(1, ...nv.map(x=>x[1]));
+    $('#never').innerHTML = nv.map(([n,v]) => `<span>${esc(n)}</span><span class="track"><span class="fill" style="width:${(100*v/nmax).toFixed(1)}%"></span></span><span class="n">${v.toLocaleString()}</span>`).join('');
   }
   function filterSuite(){
     const q = $('#ssearch').value.trim().toLowerCase(), st = $('#sstatus').value;
@@ -547,7 +611,7 @@ table.suite td.lab:hover{color:var(--accent)}
     const cell = v => { const a = v>=1 ? Math.min(1, 0.15+Math.log10(v+1)/2.2) : 0; const bg = a ? `background:color-mix(in srgb, var(--bar) ${(a*100).toFixed(0)}%, transparent);${a>.55?'color:#fff':''}` : v===0 ? 'color:var(--fg-3)' : ''; return `<td class="n"><span class="cell" style="${bg}">${v===0?'0':v<0.01?v.toExponential(1):fmt(v, v<1?3:v<10?2:1)}</span></td>`; };
     const body = sRows.slice(0,sShown).map(r => `<tr><td class="n" style="color:var(--fg-3)">${r[0]}</td><td class="lab" data-id="${r[0]}" title="${esc(r[1])}">${esc(r[1])||'<i>(unlabeled)</i>'}</td><td><span class="pill ${r[3]}">${r[3]}</span></td><td class="n">${scoreChip(r[4])}</td>${cell(r[2])}${S.benches.map((_,i)=>cell(r[5+i])).join('')}</tr>`).join('');
     $('#stable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
-    $('#scount').textContent = `${sRows.length.toLocaleString()} of ${S.rows.length.toLocaleString()} concepts`;
+    $('#scount').textContent = `${sRows.length.toLocaleString()} of ${S.rows.length.toLocaleString()} kept concepts`;
     $('#smore').hidden = sShown >= sRows.length;
     $('#smore').textContent = `Show ${Math.min(200, sRows.length - sShown)} more`;
   }
@@ -589,8 +653,14 @@ table.suite td.lab:hover{color:var(--accent)}
 
 
   // ---- effective concepts along the lineages (effective.json from web/build_effective.py)
-  async function renderEffective(){
-    let E; try { E = await (await fetch('effective.json')).json(); } catch(e){ return; }
+  let EFFALL = null, BANDSALL = null;
+  async function loadEffective(){ try { EFFALL = await (await fetch('effective.json')).json(); } catch(e){ return; } renderEffective(); }
+  async function loadBands(){ try { BANDSALL = await (await fetch('bands.json')).json(); } catch(e){ return; } renderBands(); }
+  const freshen = ids => ids.forEach(id => { const el = $('#'+id); const c = el.cloneNode(false); el.replaceWith(c); });  // drops old listeners
+  function renderEffective(){
+    if (!EFFALL) return;
+    const E = EFFALL.filters ? (EFFALL.filters[FNAME] || EFFALL.filters.all) : EFFALL;
+    freshen(['effrare','effbars','effcurve']);
     const pane = $('#effpane'); pane.hidden = false;
     $('#effbudget').textContent = E.budget.toLocaleString(); $('#effseeds').textContent = E.seeds;
     const FAMC = ['var(--accent)','var(--fam-2)','var(--series-2)','var(--fam-4)'];
@@ -679,8 +749,10 @@ table.suite td.lab:hover{color:var(--accent)}
 
 
   // ---- label-score bands per benchmark (bands.json from web/build_bands.py)
-  async function renderBands(){
-    let D; try { D = await (await fetch('bands.json')).json(); } catch(e){ return; }
+  function renderBands(){
+    if (!BANDSALL) return;
+    const D = BANDSALL.filters ? (BANDSALL.filters[FNAME] || BANDSALL.filters.all) : BANDSALL;
+    freshen(['bandbars','bandheat']);
     $('#bandpane').hidden = false;
     const tip = $('#tip');
     const showTip = (e, html) => { tip.hidden=false; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY+12)+'px'; tip.innerHTML = html; };
@@ -724,7 +796,7 @@ table.suite td.lab:hover{color:var(--accent)}
     bh.addEventListener('mousemove', e => { const t = e.target.closest('.hc'); if (!t){ hideTip(); return; } const r = rows[+t.dataset.i], k = +t.dataset.k;
       showTip(e, `<b>${esc(r.name)}</b> · score ${esc(D.bands[k])}<br><span class="mono">effective ${r.beff[k].toLocaleString()} of ${r.active[k].toLocaleString()} active (${D.n[k].toLocaleString()} in band)<br>all bands: ${r.eff.toLocaleString()} · mass share ${(100*r.share[k]).toFixed(1)}%</span>`); });
     bh.addEventListener('mouseleave', hideTip);
-    $('#bandpane').addEventListener('click', async e => { const t = e.target.closest('.bn'); if (!t || !have.has(t.dataset.key)) return; await loadBench(t.dataset.key); show('concepts'); });
+    if (!$('#bandpane')._wired){ $('#bandpane')._wired = true; $('#bandpane').addEventListener('click', async e => { const t = e.target.closest('.bn'); if (!t || !have.has(t.dataset.key)) return; await loadBench(t.dataset.key); show('concepts'); }); }
   }
 
   // ---- boot
@@ -732,8 +804,8 @@ table.suite td.lab:hover{color:var(--accent)}
   try { const b = localStorage.getItem('atlas.bench'); if (M.benches.some(x=>x.key===b)) start = b; tab = localStorage.getItem('atlas.tab') || tab; } catch(e){}
   if (location.hash){ const h = location.hash.slice(1); if (views.includes(h)) tab = h; else if (M.benches.some(x=>x.key===h)) start = h; }
   renderLineages();
-  renderEffective();
-  renderBands();
+  loadEffective();
+  loadBands();
   await loadBench(start);
   show(tab);
 })();
