@@ -167,7 +167,7 @@ table.suite td.lab:hover{color:var(--accent)}
 .effgrid svg{width:100%;height:auto;display:block;font-family:var(--font-ui)}
 #effpane .ttl{font-size:13px;font-weight:600;margin-bottom:2px}
 #effpane .sub{font-size:11.5px;color:var(--fg-3);margin-bottom:6px}
-#effrare svg{width:100%;height:auto;display:block;font-family:var(--font-ui)}
+#effrare svg,#tlchart svg{width:100%;height:auto;display:block;font-family:var(--font-ui)}
 .eff-key{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--fg-2);margin-top:6px}
 .eff-key i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
 .efftbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
@@ -203,6 +203,7 @@ table.suite td.lab:hover{color:var(--accent)}
     <button class="tab" role="tab" id="tab-compare" aria-selected="false" data-view="compare">Base vs instruct</button>
     <button class="tab" role="tab" id="tab-suite" aria-selected="false" data-view="suite">All benchmarks</button>
     <button class="tab" role="tab" id="tab-lineage" aria-selected="false" data-view="lineage">Lineage</button>
+    <button class="tab" role="tab" id="tab-timeline" aria-selected="false" data-view="timeline">Timeline</button>
   </div>
 </header>
 
@@ -305,6 +306,14 @@ table.suite td.lab:hover{color:var(--accent)}
       <div class="effwrap"><table class="efftbl" id="efftbl"></table></div>
     </div>
   </section>
+  <section class="view lineage" id="view-timeline" hidden>
+    <div class="pane">
+      <h2 style="font-size:16px">Effective concepts by release year</h2>
+      <p class="note">Every benchmark in the atlas placed at its release year, with Effective(T) at the shared T = <span id="tlbudget" class="mono"></span> tokens under the header's feature filter (mean of <span id="tlseeds" class="mono"></span> draws; whiskers ± 1 sd). Hollow markers are benchmarks smaller than T, shown at their all-token value. The dashed line joins the yearly medians. Hover for numbers, click to open a benchmark.</p>
+      <div id="tlchart"></div>
+      <div class="effwrap"><table class="efftbl" id="tltbl"></table></div>
+    </div>
+  </section>
 </main>
 <div class="tip" id="tip" hidden></div>
 
@@ -341,7 +350,7 @@ table.suite td.lab:hover{color:var(--accent)}
     if (first) return;
     if (D){ applyFeatFilter(); renderStats(); filterFeats(); openFeat(byId.has(curF) ? curF : feats[0].id, true); if (curQ != null) openItem(curQ); cmpDrawn = false; if (!$('#view-compare').hidden) drawCompare(); }
     if (S){ suiteApplyFilter(); renderSuiteSummary(); filterSuite(); }
-    renderEffective(); renderBands();
+    renderEffective(); renderBands(); renderTimeline();
   }
   function applyFeatFilter(){
     feats = allFeats.filter(f => keep[f.id]);
@@ -364,13 +373,16 @@ table.suite td.lab:hover{color:var(--accent)}
   try { M = await (await fetch('manifest.json')).json(); }
   catch(e){ $('#loading').textContent = 'Could not load manifest.json.'; return; }
   $('#sub').textContent = M.sae;
-  $('#bench').innerHTML = M.benches.map(b => `<option value="${b.key}">${esc(b.name)}</option>`).join('');
+  { const SUITE_LABEL = {general:'General', code:'Code', lineage:'Lineage families', reference:'Reference corpora (not benchmarks)', timeline:'Timeline, by year'};
+    const groups = [...new Set(M.benches.map(b=>b.suite))];
+    $('#bench').innerHTML = groups.map(g => `<optgroup label="${esc(SUITE_LABEL[g]||g)}">${M.benches.filter(b=>b.suite===g).map(b => `<option value="${b.key}">${esc(b.name)}${b.year && g==='timeline' ? ' · '+b.year : ''}</option>`).join('')}</optgroup>`).join(''); }
   try { FL = await (await fetch('filters.json')).json(); } catch(e){ FL = null; $('#ffilter').disabled = true; }
+  let LBL = []; try { LBL = await (await fetch('labels.json')).json(); } catch(e){}
   { let f0 = 'fineweb'; try { const v = localStorage.getItem('atlas.filter'); if (['all','fineweb','score','both'].includes(v)) f0 = v; } catch(e){} setFilter(f0, true); }
   $('#ffilter').addEventListener('change', e => setFilter(e.target.value));
 
   // ---- tabs
-  const views = ['concepts','questions','compare','suite','lineage'];
+  const views = ['concepts','questions','compare','suite','lineage','timeline'];
   function show(v){
     views.forEach(x => { $('#view-'+x).hidden = x!==v; $('#tab-'+x).setAttribute('aria-selected', x===v); });
     try { localStorage.setItem('atlas.tab', v); } catch(e){}
@@ -385,6 +397,11 @@ table.suite td.lab:hover{color:var(--accent)}
     let d;
     try { d = await (await fetch(key + '.json')).json(); }
     catch(e){ $('#loading').textContent = `Could not load ${key}.json.`; return; }
+    if (d.F && !d.features){  // compact columnar page file: expand into feature objects, labels from labels.json
+      const F = d.F, n = F.id.length; d.features = new Array(n);
+      for (let i = 0; i < n; i++) d.features[i] = {id:F.id[i], label:LBL[F.id[i]]||'', score:F.score[i], chi:F.chi[i], mean:F.mean[i], frac:F.frac[i], max:F.max[i], hmax:F.hmax[i], top:F.top[i], hist:F.hist[i], ...(F.cmp ? {cmp:F.cmp[i]} : {})};
+      delete d.F;
+    }
     D = d; benchKey = key; [N0, N1] = D.names;
     allFeats = D.features; items = D.items; byId = new Map(allFeats.map(f => [f.id, f]));
     for (const f of allFeats) f.chi0 = f.chi;
@@ -451,7 +468,7 @@ table.suite td.lab:hover{color:var(--accent)}
           <span>peak <b>${fmt(f.max,2)}</b></span>${cmp}
           <span title="${SCORE_TIP}">label score ${scoreChip(f.score)}</span>
         </div>
-        <div class="sec"><h3>Per-item activation (items where it fires)</h3>${histSVG(f.hist, f.hmax, 'var(--bar)')}</div>
+        <div class="sec"><h3>Per-item activation (items where it fires)</h3>${f.hist ? histSVG(f.hist, f.hmax, 'var(--bar)') : `<div class="empty">Fires on ${Math.round(f.frac*items.length)} item${Math.round(f.frac*items.length)===1?'':'s'}, too few for a histogram; see the top items below.</div>`}</div>
         <div class="sec"><h3>Top activating items</h3><div class="toplist">${top}</div></div>`;
     }
     $('#fdetail').scrollTop = 0;
@@ -799,6 +816,56 @@ table.suite td.lab:hover{color:var(--accent)}
     if (!$('#bandpane')._wired){ $('#bandpane')._wired = true; $('#bandpane').addEventListener('click', async e => { const t = e.target.closest('.bn'); if (!t || !have.has(t.dataset.key)) return; await loadBench(t.dataset.key); show('concepts'); }); }
   }
 
+  // ---- timeline (timeline.json from web/build_timeline.py)
+  let TLALL = null;
+  async function loadTimeline(){ try { TLALL = await (await fetch('timeline.json')).json(); } catch(e){ return; } renderTimeline(); }
+  function renderTimeline(){
+    if (!TLALL) return;
+    const T = TLALL.filters ? (TLALL.filters[FNAME] || TLALL.filters.all) : TLALL;
+    freshen(['tlchart']);
+    $('#tlbudget').textContent = T.budget.toLocaleString(); $('#tlseeds').textContent = T.seeds;
+    const rows = T.rows, have = new Set(M.benches.map(b=>b.key));
+    const tip = $('#tip');
+    const showTip = (e, html) => { tip.hidden=false; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY+12)+'px'; tip.innerHTML = html; };
+    const hideTip = () => { tip.hidden = true; };
+    const years = [...new Set(rows.map(r=>r.year))].sort();
+    const y0 = Math.min(...years), y1 = Math.max(...years);
+    const W = 1000, H = 520, ml = 50, mr = 20, mt = 16, mb = 36, iw = W-ml-mr, ih = H-mt-mb;
+    const ymax = Math.ceil((Math.max(...rows.map(r=>r.eff+r.sd)) + 200)/500)*500;
+    const sx = y => ml + iw*(y - y0 + 0.5)/(y1 - y0 + 1), sy = v => mt + ih - ih*v/ymax;
+    const grid = years.map(y => `<line x1="${sx(y)}" x2="${sx(y)}" y1="${mt}" y2="${mt+ih}" stroke="var(--line)"/><text x="${sx(y)}" y="${H-12}" text-anchor="middle" font-size="11" fill="var(--fg-2)">${y}</text>`).join('')
+      + Array.from({length: ymax/500+1}, (_,i)=>i*500).map(v=>`<line x1="${ml}" x2="${W-mr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)"/><text x="${ml-6}" y="${sy(v)+3.5}" text-anchor="end" font-size="10" fill="var(--fg-3)">${v?(v/1000)+'k':'0'}</text>`).join('');
+    // medians
+    const med = years.map(y => { const v = rows.filter(r=>r.year===y).map(r=>r.eff).sort((a,b)=>a-b); return [y, v.length%2 ? v[(v.length-1)/2] : (v[v.length/2-1]+v[v.length/2])/2]; });
+    const medPath = `<path d="${med.map(([y,v],i)=>(i?'L':'M')+sx(y).toFixed(1)+' '+sy(v).toFixed(1)).join('')}" fill="none" stroke="var(--fg-3)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    // labels: within each year, spread the dots horizontally and nudge labels apart vertically
+    const half = iw/(y1-y0+1)/2 - 6;
+    let marks = '', labels = '';
+    for (const y of years){
+      const rs = rows.filter(r=>r.year===y).sort((a,b)=>b.eff-a.eff);
+      const n = rs.length;
+      rs.forEach((r,i) => {
+        const x = sx(y) + (n > 1 ? -half*0.5 + half*i/(n-1) : 0), yy = sy(r.eff);
+        r._x = x; r._y = yy;
+        const idx = rows.indexOf(r);
+        marks += `<g class="tl" data-i="${idx}" style="cursor:${have.has(r.key)?'pointer':'default'}"><line x1="${x}" x2="${x}" y1="${sy(r.eff-r.sd)}" y2="${sy(r.eff+r.sd)}" stroke="var(--accent)" stroke-width="1"/><circle cx="${x}" cy="${yy}" r="4.5" fill="${r.under_budget?'var(--panel)':'var(--accent)'}" stroke="var(--accent)" stroke-width="1.6"/><circle cx="${x}" cy="${yy}" r="10" fill="transparent"/></g>`;
+      });
+      // label collision: sorted by y, push down
+      const ls = rs.map(r=>({r, y:r._y})).sort((a,b)=>a.y-b.y);
+      for (let k=1;k<ls.length;k++) if (ls[k].y - ls[k-1].y < 11) ls[k].y = ls[k-1].y + 11;
+      for (const l of ls) labels += `<text x="${l.r._x+7}" y="${l.y+3.5}" font-size="9.5" fill="var(--fg-2)" pointer-events="none">${esc(l.r.name)}</text>`;
+    }
+    $('#tlchart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Effective concepts by release year">${grid}${medPath}${marks}${labels}<text transform="translate(12,${mt+ih/2}) rotate(-90)" text-anchor="middle" font-size="10.5" fill="var(--fg-2)">Effective(T), ${T.n_feats.toLocaleString()} features kept</text></svg>`;
+    const c = $('#tlchart');
+    c.addEventListener('mousemove', e => { const g = e.target.closest('.tl'); if (!g){ hideTip(); return; } const r = rows[+g.dataset.i];
+      showTip(e, `<b>${esc(r.name)}</b> · ${r.year} <span style="color:var(--fg-3)">${esc(r.suite)}</span><br><span class="mono">Effective(T) ${r.eff.toLocaleString()}${r.sd?' ± '+r.sd:''}${r.under_budget?' (all tokens, below T)':''}<br>all tokens ${r.full.toLocaleString()} · ${r.items.toLocaleString()} items · ${r.ntok.toLocaleString()} tokens</span>`); });
+    c.addEventListener('mouseleave', hideTip);
+    c.addEventListener('click', async e => { const g = e.target.closest('.tl'); if (!g) return; const r = rows[+g.dataset.i]; if (have.has(r.key)){ await loadBench(r.key); show('concepts'); } });
+    $('#tltbl').innerHTML = `<thead><tr><th>year</th><th>benchmark</th><th>suite</th><th>Effective(T)</th><th>± sd</th><th>all tokens</th><th>items</th><th>tokens</th></tr></thead><tbody>` +
+      rows.map(r => `<tr><td class="n">${r.year}</td><td>${esc(r.name)}${r.under_budget?' *':''}</td><td style="color:var(--fg-3)">${esc(r.suite)}</td><td class="n"><b>${r.eff.toLocaleString()}</b></td><td class="n">${r.sd}</td><td class="n">${r.full.toLocaleString()}</td><td class="n">${r.items.toLocaleString()}</td><td class="n">${r.ntok.toLocaleString()}</td></tr>`).join('') +
+      `</tbody><tfoot><tr><td colspan="8" style="text-align:left;color:var(--fg-3);border:0">* fewer tokens than T: value on all of its tokens, not strictly comparable.</td></tr></tfoot>`;
+  }
+
   // ---- boot
   let start = M.benches[0].key, tab = 'concepts';
   try { const b = localStorage.getItem('atlas.bench'); if (M.benches.some(x=>x.key===b)) start = b; tab = localStorage.getItem('atlas.tab') || tab; } catch(e){}
@@ -806,6 +873,7 @@ table.suite td.lab:hover{color:var(--accent)}
   renderLineages();
   loadEffective();
   loadBands();
+  loadTimeline();
   await loadBench(start);
   show(tab);
 })();
